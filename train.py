@@ -142,6 +142,15 @@ def optimize_model():
 
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
 
+    # Debug shape before passing to network
+    if non_final_mask.sum() > 0:  # If we have any non-final states
+        print(f"non_final_next_states shape: {non_final_next_states.shape}")
+        # Ensure proper shape for conv2d - should be [batch, channels, height, width]
+        if len(non_final_next_states.shape) < 3:
+            # Handle reshaping or skip problematic batch
+            print("Invalid shape detected, skipping batch")
+            return
+
     with torch.no_grad():
         next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
 
