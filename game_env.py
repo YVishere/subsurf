@@ -14,7 +14,6 @@ from scripts import *
 
 pytesseract.pytesseract.tesseract_cmd = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
 
-# Add these functions at the top of your file after imports
 def preprocess_templates_with_svd(templates, target_shape):
     """Process templates using SVD for improved matching."""
     processed_templates = []
@@ -23,54 +22,38 @@ def preprocess_templates_with_svd(templates, target_shape):
         if template is None or template.size == 0:
             continue
             
-        # First resize template to be smaller than target region
-        # Template must be smaller than the region we're searching
         if template.shape[0] >= target_shape[0] or template.shape[1] >= target_shape[1]:
             scale = min(0.9 * target_shape[0] / template.shape[0], 
                          0.9 * target_shape[1] / template.shape[1])
             new_size = (int(template.shape[1] * scale), int(template.shape[0] * scale))
             template = cv2.resize(template, new_size)
         
-        # Apply SVD for more robust matching
         try:
             u, s, vh = np.linalg.svd(template, full_matrices=False)
             
-            # Keep only most significant components
-            k = min(10, len(s))  # Keep top k singular values
+            k = min(10, len(s))
             reconstructed = u[:, :k] @ np.diag(s[:k]) @ vh[:k, :]
             
-            # Normalize to 0-255 range
             reconstructed = cv2.normalize(reconstructed, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             processed_templates.append(reconstructed)
         except:
-            # Fallback if SVD fails
             processed_templates.append(template)
         
     return processed_templates
 
 def get_init_pic():
-    # Capture the screen using OpenCV
     window = gw.getWindowsWithTitle("BlueStacks")[0]
     window.activate()
-    # Get window position and dimensions
     left, top, width, height = window.left, window.top, window.width, window.height
     
-    # Capture screenshot
     screenshot = pyautogui.screenshot(region=(left, top, width, height))
 
     gray = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGR2GRAY)
 
-    # Convert to numpy array
     return np.array(gray)
 
 ss = get_init_pic()
 
-##################################
-# Score multiplier ignore setting
-##################################
-
-#Score multipliers might mess up the reward system
-# If you do not want to ignore them, set this to False
 ignore_multiplier = True
 
 x_mult1 = int(0.5681818181818182 * ss.shape[1])
@@ -78,13 +61,11 @@ x_mult2 = int(0.7173295454545454 * ss.shape[1])
 y_mult1 = int(0.023961661341853034 * ss.shape[0])
 y_mult2 = int(0.06389776357827476 * ss.shape[0])
 
-# Dimensions of score box
 xST = int(0.7173295454545454 * ss.shape[1])
 xED = int(1 * ss.shape[1])
 yST = int(0.023961661341853034 * ss.shape[0])
 yED = int(0.06389776357827476 * ss.shape[0])
 
-# Game end masks
 x1 = int(0.4018547140649153 * ss.shape[1])
 x2 = int(0.6336939721792893 * ss.shape[1])
 y1 = int(0.09894459102902374 * ss.shape[0])
@@ -109,21 +90,17 @@ class SubwayEnv(gym.Env):
         super(SubwayEnv, self).__init__()
         global ss
 
-        self.action_space = spaces.Discrete(5)  # 5 actions: left, right, up, down, none
+        self.action_space = spaces.Discrete(5)
 
-        # Game state tracking
         self.score = 0
         self.previous_score = 0
         self.steps = 0
         self.game_over = False
         
-        # FIX: Use the parameter value instead of screenshot height
-        self.frame_stack = frame_stack  # Changed from ss.shape[0]
-        self.frame_size = frame_size  # Use the input parameter which is already (84, 84)
+        self.frame_stack = frame_stack
+        self.frame_size = frame_size
         
-        # Fix observation shape dimensions
-        # Using grayscale, so channels = 1
-        self.obs_shape = (frame_stack, *frame_size)  # Results in (4, 84, 84)
+        self.obs_shape = (frame_stack, *frame_size)
 
         self.observation_space = spaces.Box(
             low=0, high=255, shape=self.obs_shape, dtype=np.uint8
@@ -136,7 +113,7 @@ class SubwayEnv(gym.Env):
             1: lambda: swipe_right_bluestacks(70),
             2: lambda: swipe_up_bluestacks(70),
             3: lambda: swipe_down_bluestacks(70),
-            4: lambda: self.no_action() # No action
+            4: lambda: self.no_action()
         }
 
         self.rewards = {
@@ -188,7 +165,6 @@ class SubwayEnv(gym.Env):
         
         if self.game_over:
             print("Game over detected!")
-            # Add a short pause to stabilize
             time.sleep(0.5)
             return self.frames, -10, True, False, {"score": self.score, "steps": self.steps}
 
@@ -203,33 +179,23 @@ class SubwayEnv(gym.Env):
         return self.frames, reward, self.game_over, False, {"score": self.score, "steps": self.steps}
     
     def _get_observation(self):
-        # Capture the screen and process the image
         screenshot = self._capture_game_screen()
 
-        # Convert to grayscale
         gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
 
-        # Resize to frame_size (width, height)
         resized = cv2.resize(gray, (self.frame_size[1], self.frame_size[0]), interpolation=cv2.INTER_AREA)
-        
-        # NOTE: cv2.resize expects (width, height) but NumPy arrays are (height, width)
-        # No need to transpose if dimensions are already correct
         
         return resized
     
     def _capture_game_screen(self):
-        # Capture the screen using OpenCV
         window = gw.getWindowsWithTitle("BlueStacks")[0]
         window.activate()
-        # Get window position and dimensions
         left, top, width, height = window.left, window.top, window.width, window.height
         
-        # Capture screenshot
         screenshot = pyautogui.screenshot(region=(left, top, width, height))
 
         screenshot.save("./debug/screenshot.png")
 
-        # Convert to numpy array
         return np.array(screenshot)
     
     def _calculate_reward(self):
@@ -251,20 +217,16 @@ class SubwayEnv(gym.Env):
         global template, template2, template3
         global x1, x2, y1, y2
         
-        # Initialize game_over counter if not present
         if not hasattr(self, '_game_over_counter'):
             self._game_over_counter = 0
-            # Fix template2 initialization if needed
             if np.array_equal(template, template2):
                 template2 = cv2.imread("bluestacks_screenshot_gameover2.png", cv2.IMREAD_GRAYSCALE)
                 if template2 is not None:
                     template2 = template2[int(y1*template2.shape[0]/ss.shape[0]):int(y2*template2.shape[0]/ss.shape[0]), 
                                          int(x1*template2.shape[1]/ss.shape[1]):int(x2*template2.shape[1]/ss.shape[1])]
             
-            # Create processed templates scaled to match ROI
             self.templates = [template, template2, template3] if template2 is not None else [template]
         
-        # Extract ROI from current frame
         try:
             gray = self.frames[-1][y1:y2, x1:x2].copy()
             cv2.imwrite("./debug/game_over_roi.png", gray)
@@ -272,25 +234,21 @@ class SubwayEnv(gym.Env):
             print("Error extracting ROI, using full frame")
             gray = self.frames[-1].copy()
         
-        # Process templates if not done yet
         if not hasattr(self, 'processed_templates'):
             self.processed_templates = preprocess_templates_with_svd(self.templates, gray.shape)
         
-        # Check each template
         is_game_over = False
         match_index = -1
         best_confidence = 0
         
         for i, proc_template in enumerate(self.processed_templates):
             try:
-                # Ensure template is smaller than ROI
                 if proc_template.shape[0] > gray.shape[0] or proc_template.shape[1] > gray.shape[1]:
                     scale = min(0.9 * gray.shape[0] / proc_template.shape[0], 
                                 0.9 * gray.shape[1] / proc_template.shape[1])
                     new_size = (int(proc_template.shape[1] * scale), int(proc_template.shape[0] * scale))
                     proc_template = cv2.resize(proc_template, new_size)
                 
-                # Try template matching
                 result = cv2.matchTemplate(gray, proc_template, cv2.TM_CCOEFF_NORMED)
                 confidence = np.max(result)
                 print(f"Template {i} matching result: {confidence:.4f}")
@@ -299,19 +257,17 @@ class SubwayEnv(gym.Env):
                     best_confidence = confidence
                     match_index = i
                     
-                if confidence > 0.7:  # Slightly reduced threshold for robustness
+                if confidence > 0.7:
                     is_game_over = True
             except Exception as e:
                 print(f"Error matching template {i}: {e}")
         
-        # Use temporal consistency for more robust detection
         if is_game_over:
             self._game_over_counter += 1
             print(f"Game over candidate detected! (Template #{match_index}, confidence: {best_confidence:.3f})")
         else:
             self._game_over_counter = max(0, self._game_over_counter - 1)
         
-        # Require 2 consecutive detections to confirm game over
         confirmed_game_over = self._game_over_counter >= 2
         
         if confirmed_game_over:
@@ -328,27 +284,23 @@ class SubwayEnv(gym.Env):
         np_img = self.frames[-1]
         cropped = np_img[yST:yED, xST:xED]
         
-        # Save using OpenCV instead of matplotlib for better image quality
         cv2.imwrite("./debug/score.png", cropped)
         
         score_text = pytesseract.image_to_string(cropped, config='--psm 7 digits')
         
-        # Clean the string to keep only digits
         digits_only = ''.join(c for c in score_text if c.isdigit())
         
         try:
-            # Convert to integer if digits are found
             score = int(digits_only) if digits_only else 0
         except ValueError:
-            # Fallback if conversion fails
             print(f"Warning: Could not parse score text: '{score_text}'")
-            score = self.previous_score  # Use previous score as fallback
+            score = self.previous_score
         
         if ignore_multiplier:
             try:
                 return score / self._get_multiplier()
             except:
-                return score  # Fallback if multiplier extraction fails
+                return score
         
         return score
     
@@ -357,22 +309,18 @@ class SubwayEnv(gym.Env):
         np_img = self.frames[-1]
         cropped = np_img[y_mult1:y_mult2, x_mult1:x_mult2]
 
-        # Use OpenCV instead of matplotlib
         cv2.imwrite("./debug/multiplier.png", cropped)
 
         multiplier_text = pytesseract.image_to_string(cropped, config='--psm 7 digits')
         
-        # Clean the string to keep only digits
         digits_only = ''.join(c for c in multiplier_text if c.isdigit())
         
         try:
-            # Default to 1 if no multiplier found (prevents division by zero)
             multiplier = int(digits_only) if digits_only else 1
-            # Multiplier can't be zero (would cause division by zero)
             return max(1, multiplier)
         except ValueError:
             print(f"Warning: Could not parse multiplier text: '{multiplier_text}'")
-            return 1  # Default multiplier
+            return 1
     
     def _restart_game(self):
         restart_game(self.case)

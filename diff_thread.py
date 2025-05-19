@@ -16,29 +16,23 @@ def _detect_game_over( img):
         return np.max(result) > 0.8
 
 def capture_bluestacks_screenshot():
-    # Find BlueStacks window
     bluestacks_windows = gw.getWindowsWithTitle('BlueStacks')
 
     if not bluestacks_windows:
         print("BlueStacks window not found")
     else:
-        # Get the first window that matches
         bluestacks_window = bluestacks_windows[0]
         
-        # Try to activate the window, but handle the potential error
         try:
             bluestacks_window.activate()
         except Exception as e:
-            # If the error message indicates it was actually successful, continue
             if "Error code from Windows: 0" in str(e):
                 print("Window activation reported an error but seems to have succeeded")
             else:
                 print(f"Window activation failed: {e}")
         
-        # Get the position and size of the window
         left, top, width, height = bluestacks_window.left, bluestacks_window.top, bluestacks_window.width, bluestacks_window.height
         
-        # Take a screenshot of the specified region
         screenshot = pyautogui.screenshot(region=(left, top, width, height))
         
         return screenshot, screenshot.size
