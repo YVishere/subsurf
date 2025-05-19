@@ -70,7 +70,11 @@ def restart_game(case):
     abs_x, abs_y = to_absolute_coords(info, 0)
     pyautogui.moveTo(abs_x, abs_y, duration=0.05)
     pyautogui.click()
+
     time.sleep(0.1)  # Short delay to ensure the click is registered
+    center_x = info['left'] + info['width']//2
+    center_y = info['top'] + info['height']//2
+    pyautogui.moveTo(center_x, center_y, duration=0.05)
 
 def start_game():
     # Press play button
@@ -84,6 +88,9 @@ def start_game():
     pyautogui.moveTo(abs_x, abs_y, duration=0.05)
     pyautogui.click()
     time.sleep(0.1)  # Short delay to ensure the click is registered
+    center_x = info['left'] + info['width']//2
+    center_y = info['top'] + info['height']//2
+    pyautogui.moveTo(center_x, center_y, duration=0.05)
 
 def swipe_bluestacks(start_x, start_y, end_x, end_y, duration=0.08):
     """Performs a faster swipe from start to end coordinates"""
@@ -137,87 +144,32 @@ def swipe_bluestacks(start_x, start_y, end_x, end_y, duration=0.08):
         return False
 
 def swipe_left_bluestacks(distance=70):
-    """Faster left swipe"""
-    window = gw.getWindowsWithTitle('BlueStacks')[0]
-    
-    # No need to wait after activation for most cases
-    window.activate()
-    
-    center_x = window.left + window.width // 2
-    center_y = window.top + window.height // 2
-    
-    start_x = center_x + distance // 2
-    end_x = center_x - distance // 2
-    
-    # Reduced base duration
-    duration = 0.05 + (distance / 300)  # Reduced from 0.1 base
-    
-    result = swipe_bluestacks(start_x, center_y, end_x, center_y, duration)
-    
-    if result:
-        print(f"Left swipe performed at center of BlueStacks ({center_x}, {center_y})")
-        print(f"Swiped from x={start_x} to x={end_x} (distance: {distance} pixels)")
-    
+    pyautogui.click()
+    pyautogui.press('left')
+    print("Down arrow key pressed")
+    result = True
     return result
 
 def swipe_right_bluestacks(distance=70):
-    """Performs a right swipe on BlueStacks window"""
-    window = gw.getWindowsWithTitle('BlueStacks')[0]
-    window.activate()
-    
-    center_x = window.left + window.width // 2
-    center_y = window.top + window.height // 2
-    
-    start_x = center_x - distance // 2
-    end_x = center_x + distance // 2
-    
-    duration = 0.05 + (distance / 300)
-    
-    result = swipe_bluestacks(start_x, center_y, end_x, center_y, duration)
-    
-    if result:
-        print(f"Right swipe performed: {distance}px")
-    
+    pyautogui.click()
+    pyautogui.press('right')
+    print("Down arrow key pressed")
+    result = True
     return result
 
 def swipe_up_bluestacks(distance=70):
-    """Performs an upward swipe on BlueStacks window"""
-    window = gw.getWindowsWithTitle('BlueStacks')[0]
-    window.activate()
-    
-    center_x = window.left + window.width // 2
-    center_y = window.top + window.height // 2
-    
-    start_y = center_y + distance // 2
-    end_y = center_y - distance // 2
-    
-    duration = 0.05 + (distance / 300)
-    
-    result = swipe_bluestacks(center_x, start_y, center_x, end_y, duration)
-    
-    if result:
-        print(f"Up swipe performed: {distance}px")
-    
+    pyautogui.click()
+    pyautogui.press('up')
+    print("Down arrow key pressed")
+    result = True
     return result
 
 def swipe_down_bluestacks(distance=70):
-    """Performs a downward swipe on BlueStacks window"""
-    window = gw.getWindowsWithTitle('BlueStacks')[0]
-    window.activate()
-    
-    center_x = window.left + window.width // 2
-    center_y = window.top + window.height // 2
-    
-    start_y = center_y - distance // 2
-    end_y = center_y + distance // 2
-    
-    duration = 0.05 + (distance / 300)
-    
-    result = swipe_bluestacks(center_x, start_y, center_x, end_y, duration)
-    
-    if result:
-        print(f"Down swipe performed: {distance}px")
-    
+    pyautogui.click()
+    pyautogui.press('down')
+
+    print("Down arrow key pressed")
+    result = True
     return result
 
 def random_ac(i):
@@ -235,6 +187,7 @@ def random_ac(i):
 if __name__ == "__main__":
     import random 
     count =0 
+    time.sleep(2)
     while count < 10:
         count += 1
         i = random.randint(1, 4)

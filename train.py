@@ -200,7 +200,7 @@ for episode in range(num_eps):
 
         if done:
             episode_durations.append(t + 1)
-            plot_durations()
+            # plot_durations()
             print(f"Episode {episode}, Score: {info['score']}, Reward: {total_reward:.2f}")
             break
 
