@@ -146,21 +146,21 @@ def swipe_bluestacks(start_x, start_y, end_x, end_y, duration=0.08):
 def swipe_left_bluestacks(distance=70):
     pyautogui.click()
     pyautogui.press('left')
-    print("Down arrow key pressed")
+    print("left arrow key pressed")
     result = True
     return result
 
 def swipe_right_bluestacks(distance=70):
     pyautogui.click()
     pyautogui.press('right')
-    print("Down arrow key pressed")
+    print("right arrow key pressed")
     result = True
     return result
 
 def swipe_up_bluestacks(distance=70):
     pyautogui.click()
     pyautogui.press('up')
-    print("Down arrow key pressed")
+    print("up arrow key pressed")
     result = True
     return result
 

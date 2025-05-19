@@ -136,7 +136,7 @@ class SubwayEnv(gym.Env):
             1: lambda: swipe_right_bluestacks(70),
             2: lambda: swipe_up_bluestacks(70),
             3: lambda: swipe_down_bluestacks(70),
-            4: lambda: time.sleep(0.1)  # No action
+            4: lambda: self.no_action() # No action
         }
 
         self.rewards = {
@@ -145,6 +145,11 @@ class SubwayEnv(gym.Env):
             'diff_multiplier': 0.5,
         }
         self.case = -1
+    
+    def no_action(self):
+        time.sleep(0.1)
+        print("---------No action performed")
+        return True
     
     def reset(self, **kwargs):
         self._restart_game()
