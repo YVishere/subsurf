@@ -7,6 +7,7 @@ import pyautogui
 import pygetwindow as gw
 import pytesseract
 import matplotlib.pyplot as plt
+import mss
 
 import time
 
@@ -41,16 +42,18 @@ def preprocess_templates_with_svd(templates, target_shape):
         
     return processed_templates
 
-def get_init_pic():
+def get_bluestacks_coords():
     window = gw.getWindowsWithTitle("BlueStacks")[0]
-    window.activate()
-    left, top, width, height = window.left, window.top, window.width, window.height
-    
-    screenshot = pyautogui.screenshot(region=(left, top, width, height))
+    return window.left, window.top, window.width, window.height
 
-    gray = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGR2GRAY)
+bs_left, bs_top, bs_width, bs_height = get_bluestacks_coords()
 
-    return np.array(gray)
+def get_init_pic():
+    with mss.mss() as sct:
+        monitor = {"left": bs_left, "top": bs_top, "width": bs_width, "height": bs_height}
+        screenshot = np.array(sct.grab(monitor))
+        gray = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2GRAY)
+        return gray
 
 ss = get_init_pic()
 
@@ -73,17 +76,26 @@ y2 = int(0.7915567282321899 * ss.shape[0])
 
 print(ss.shape)
 
+# In the initialization section, load full templates without cropping
 template = cv2.imread("bluestacks_screenshot_gameover.png", cv2.IMREAD_GRAYSCALE)
 template = np.array(template)
-template = template[int(y1*template.shape[0]/ss.shape[0]):int(y2*template.shape[0]/ss.shape[0]), int(x1*template.shape[1]/ss.shape[1]):int(x2*template.shape[1]/ss.shape[1])]
+# Remove cropping
+# template = template[int(y1*template.shape[0]/ss.shape[0]):int(y2*template.shape[0]/ss.shape[0]), int(x1*template.shape[1]/ss.shape[1]):int(x2*template.shape[1]/ss.shape[1])]
 
 template2 = cv2.imread("bluestacks_screenshot_gameover2.png", cv2.IMREAD_GRAYSCALE)
 template2 = np.array(template2)
-template2 = template2[int(y1*template2.shape[0]/ss.shape[0]):int(y2*template2.shape[0]/ss.shape[0]), int(x1*template2.shape[1]/ss.shape[1]):int(x2*template2.shape[1]/ss.shape[1])]
+# Remove cropping
+# template2 = template2[int(y1*template2.shape[0]/ss.shape[0]):int(y2*template2.shape[0]/ss.shape[0]), int(x1*template2.shape[1]/ss.shape[1]):int(x2*template2.shape[1]/ss.shape[1])]
 
 template3 = cv2.imread("bluestacks_screenshot_gameover3.png", cv2.IMREAD_GRAYSCALE)
 template3 = np.array(template3)
-template3 = template3[int(y1*template3.shape[0]/ss.shape[0]):int(y2*template3.shape[0]/ss.shape[0]), int(x1*template3.shape[1]/ss.shape[1]):int(x2*template3.shape[1]/ss.shape[1])]
+# Remove cropping
+# template3 = template3[int(y1*template3.shape[0]/ss.shape[0]):int(y2*template3.shape[0]/ss.shape[0]), int(x1*template3.shape[1]/ss.shape[1]):int(x2*template3.shape[1]/ss.shape[1])]
+
+template4 = cv2.imread("bluestacks_screenshot_gameover4.png", cv2.IMREAD_GRAYSCALE)
+template4 = np.array(template4)
+# Remove cropping
+# template3 = template3[int(y1*template3.shape[0]/ss.shape[0]):int(y2*template3.shape[0]/ss.shape[0]), int(x1*template3.shape[1]/ss.shape[1]):int(x2*template3.shape[1]/ss.shape[1])]
 class SubwayEnv(gym.Env):
 
     def __init__(self, frame_stack=4, frame_size=(84, 84)):
@@ -122,10 +134,14 @@ class SubwayEnv(gym.Env):
             'diff_multiplier': 0.5,
         }
         self.case = -1
+
+        # Create persistent mss instance for faster screenshots
+        self.sct = mss.mss()
+        self.monitor = {"left": bs_left, "top": bs_top, "width": bs_width, "height": bs_height}
     
     def no_action(self):
-        time.sleep(0.1)
-        print("---------No action performed")
+        time.sleep(0.1)  # Remove delay
+        print("---------No action performed")  # Comment out print
         return True
     
     def reset(self, **kwargs):
@@ -140,8 +156,8 @@ class SubwayEnv(gym.Env):
 
         for i in range(self.frame_stack):
             self.frames[i] = self._get_observation()
-            time.sleep(0.1)
-        time.sleep(1.0)
+            # time.sleep(0.1)  # Remove delay
+        time.sleep(1.0)  # Remove delay
         self.score = self._extract_score()
         if self.score == 0 and hasattr(self, '_prev_reset_attempts'):
             self._prev_reset_attempts += 1
@@ -151,7 +167,7 @@ class SubwayEnv(gym.Env):
             else: 
                 print("waiting for user to do something")
                 self._prev_reset_attempts = 0
-                time.sleep(5)
+                time.sleep(5)  # Keep this longer timeout for user intervention
                 self.reset(**kwargs)
         else:
             self._prev_reset_attempts = 0
@@ -164,11 +180,11 @@ class SubwayEnv(gym.Env):
         self.game_over, self.case = self._detect_game_over()
         
         if self.game_over:
-            print("Game over detected!")
-            time.sleep(0.5)
+            # print("Game over detected!")  # Comment out print
+            time.sleep(0.5)  # Remove delay
             return self.frames, -10, True, False, {"score": self.score, "steps": self.steps}
 
-        time.sleep(0.1)
+        # time.sleep(0.1)  # Remove delay
         new_frame = self._get_observation()
 
         self.frames = np.roll(self.frames, -1, axis=0)
@@ -188,103 +204,75 @@ class SubwayEnv(gym.Env):
         return resized
     
     def _capture_game_screen(self):
-        window = gw.getWindowsWithTitle("BlueStacks")[0]
-        window.activate()
-        left, top, width, height = window.left, window.top, window.width, window.height
-        
-        screenshot = pyautogui.screenshot(region=(left, top, width, height))
-
-        screenshot.save("./debug/screenshot.png")
-
-        return np.array(screenshot)
+        screenshot = np.array(self.sct.grab(self.monitor))
+        return screenshot
+    
+    def __del__(self):
+        # Clean up resources
+        if hasattr(self, 'sct'):
+            self.sct.close()
     
     def _calculate_reward(self):
-        self.score = self._extract_score()
+        # Comment out the original score-based reward system
+        # self.score = self._extract_score()
+        # reward = 0.1
+        # score_diff = self.score - self.previous_score
+        # if score_diff > 0:
+        #     reward += self.rewards['diff_multiplier'] * score_diff
 
-        reward = 0.1
+        # New reward system based on survival duration
+        reward = 1.0  # Fixed reward per action performed
 
-        score_diff = self.score - self.previous_score
-        if score_diff > 0:
-            reward += self.rewards['diff_multiplier'] * score_diff
-
+        # Keep the game over penalty
         if self.game_over:
-            reward += self.rewards['game_over']
+            reward += self.rewards['game_over']  # -10 penalty on game over
 
+        # Still update score for informational purposes only
+        self.score = self._extract_score()
         self.previous_score = self.score
+        
         return reward
     
     def _detect_game_over(self):
-        global template, template2, template3
-        global x1, x2, y1, y2
-        
+        # Initialize counter if not exists
         if not hasattr(self, '_game_over_counter'):
             self._game_over_counter = 0
-            if np.array_equal(template, template2):
-                template2 = cv2.imread("bluestacks_screenshot_gameover2.png", cv2.IMREAD_GRAYSCALE)
-                if template2 is not None:
-                    template2 = template2[int(y1*template2.shape[0]/ss.shape[0]):int(y2*template2.shape[0]/ss.shape[0]), 
-                                         int(x1*template2.shape[1]/ss.shape[1]):int(x2*template2.shape[1]/ss.shape[1])]
-            
-            self.templates = [template, template2, template3] if template2 is not None else [template]
         
-        try:
-            gray = self.frames[-1][y1:y2, x1:x2].copy()
-            cv2.imwrite("./debug/game_over_roi.png", gray)
-        except:
-            print("Error extracting ROI, using full frame")
-            gray = self.frames[-1].copy()
+        # Use current frame
+        frame = self.frames[-1].copy()
         
-        if not hasattr(self, 'processed_templates'):
-            self.processed_templates = preprocess_templates_with_svd(self.templates, gray.shape)
+        # Apply thresholding to improve OCR text detection
+        _, thresh = cv2.threshold(frame, 150, 255, cv2.THRESH_BINARY_INV)
+
+        # plt.imsave("./debug/thresh.png", thresh, cmap='gray')
+        time.sleep(0.01)  # buffer time for the screenshot to stabilize
+        # Perform OCR on the frame
+        text = pytesseract.image_to_string(thresh, config='--psm 11')
         
-        is_game_over = False
-        match_index = -1
-        best_confidence = 0
-        
-        for i, proc_template in enumerate(self.processed_templates):
-            try:
-                if proc_template.shape[0] > gray.shape[0] or proc_template.shape[1] > gray.shape[1]:
-                    scale = min(0.9 * gray.shape[0] / proc_template.shape[0], 
-                                0.9 * gray.shape[1] / proc_template.shape[1])
-                    new_size = (int(proc_template.shape[1] * scale), int(proc_template.shape[0] * scale))
-                    proc_template = cv2.resize(proc_template, new_size)
-                
-                result = cv2.matchTemplate(gray, proc_template, cv2.TM_CCOEFF_NORMED)
-                confidence = np.max(result)
-                print(f"Template {i} matching result: {confidence:.4f}")
-                
-                if confidence > best_confidence:
-                    best_confidence = confidence
-                    match_index = i
-                    
-                if confidence > 0.7:
-                    is_game_over = True
-            except Exception as e:
-                print(f"Error matching template {i}: {e}")
-        
+        # Check if "SAVE" appears in the text (case insensitive)
+        is_game_over = "SAVE" in text.upper()
         if is_game_over:
             self._game_over_counter += 1
-            print(f"Game over candidate detected! (Template #{match_index}, confidence: {best_confidence:.3f})")
+            # print(f"Game over candidate detected via OCR! Text found: {text}")
         else:
             self._game_over_counter = max(0, self._game_over_counter - 1)
         
-        confirmed_game_over = self._game_over_counter >= 2
+        # Only confirm game over after seeing it multiple times to avoid false positives
+        confirmed_game_over = self._game_over_counter >= 1
         
         if confirmed_game_over:
-            print(f"Game over confirmed! (Template #{match_index})")
-            return True, match_index
+            # print("Game over confirmed via OCR!")
+            return True, 0  # Using case 0 for OCR detection
         
-        print("No game over detected.")
         return False, 2
             
-    
     def _extract_score(self):
         global xST, xED, yST, yED
 
         np_img = self.frames[-1]
         cropped = np_img[yST:yED, xST:xED]
         
-        cv2.imwrite("./debug/score.png", cropped)
+        # cv2.imwrite("./debug/score.png", cropped)  # Comment out image saving
         
         score_text = pytesseract.image_to_string(cropped, config='--psm 7 digits')
         
@@ -293,7 +281,7 @@ class SubwayEnv(gym.Env):
         try:
             score = int(digits_only) if digits_only else 0
         except ValueError:
-            print(f"Warning: Could not parse score text: '{score_text}'")
+            # print(f"Warning: Could not parse score text: '{score_text}'")  # Comment out print
             score = self.previous_score
         
         if ignore_multiplier:
@@ -309,7 +297,7 @@ class SubwayEnv(gym.Env):
         np_img = self.frames[-1]
         cropped = np_img[y_mult1:y_mult2, x_mult1:x_mult2]
 
-        cv2.imwrite("./debug/multiplier.png", cropped)
+        # cv2.imwrite("./debug/multiplier.png", cropped)  # Comment out image saving
 
         multiplier_text = pytesseract.image_to_string(cropped, config='--psm 7 digits')
         
@@ -319,7 +307,7 @@ class SubwayEnv(gym.Env):
             multiplier = int(digits_only) if digits_only else 1
             return max(1, multiplier)
         except ValueError:
-            print(f"Warning: Could not parse multiplier text: '{multiplier_text}'")
+            # print(f"Warning: Could not parse multiplier text: '{multiplier_text}'")  # Comment out print
             return 1
     
     def _restart_game(self):
