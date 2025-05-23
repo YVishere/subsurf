@@ -2,9 +2,75 @@ import pygetwindow as gw
 import pyautogui
 import time
 from typing import Optional, Dict, Tuple
+import ctypes
 
 playbutton = (0.716, 0.941)
 continuebutton = (0.434, 0.701)
+
+# Import Windows API constants and functions
+SendInput = ctypes.windll.user32.SendInput
+# Define constants for keyboard events
+KEYEVENTF_KEYDOWN = 0x0000
+KEYEVENTF_KEYUP = 0x0002
+
+# Define key codes
+VK_LEFT = 0x25
+VK_RIGHT = 0x27
+VK_UP = 0x26
+VK_DOWN = 0x28
+
+# Create input structure
+class KeyBdInput(ctypes.Structure):
+    _fields_ = [("wVk", ctypes.c_ushort),
+                ("wScan", ctypes.c_ushort),
+                ("dwFlags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+
+class HardwareInput(ctypes.Structure):
+    _fields_ = [("uMsg", ctypes.c_ulong),
+                ("wParamL", ctypes.c_short),
+                ("wParamH", ctypes.c_ushort)]
+
+class MouseInput(ctypes.Structure):
+    _fields_ = [("dx", ctypes.c_long),
+                ("dy", ctypes.c_long),
+                ("mouseData", ctypes.c_ulong),
+                ("dwFlags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+
+class Input_I(ctypes.Union):
+    _fields_ = [("ki", KeyBdInput),
+                ("mi", MouseInput),
+                ("hi", HardwareInput)]
+
+class Input(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_ulong),
+                ("ii", Input_I)]
+
+def press_key(key_code):
+    """Send a key press using Windows API directly"""
+    extra = ctypes.c_ulong(0)
+    ii_ = Input_I()
+    ii_.ki = KeyBdInput(key_code, 0, KEYEVENTF_KEYDOWN, 0, ctypes.pointer(extra))
+    x = Input(ctypes.c_ulong(1), ii_)
+    SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
+
+def release_key(key_code):
+    """Send a key release using Windows API directly"""
+    extra = ctypes.c_ulong(0)
+    ii_ = Input_I()
+    ii_.ki = KeyBdInput(key_code, 0, KEYEVENTF_KEYUP, 0, ctypes.pointer(extra))
+    x = Input(ctypes.c_ulong(1), ii_)
+    SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
+
+def fast_key_press(key_code):
+    """Press and release a key quickly"""
+    press_key(key_code)
+    time.sleep(0.01)
+    release_key(key_code)
+    return True
 
 def get_bluestacks_window() -> Optional[Dict]:
 
@@ -156,33 +222,16 @@ def swipe_bluestacks(start_x, start_y, end_x, end_y, duration=0.08):
         return False
 
 def swipe_left_bluestacks(distance=70):
-    pyautogui.click()
-    pyautogui.press('left')
-    print("left arrow key pressed")
-    result = True
-    return result
+    return fast_key_press(VK_LEFT)
 
 def swipe_right_bluestacks(distance=70):
-    pyautogui.click()
-    pyautogui.press('right')
-    print("right arrow key pressed")
-    result = True
-    return result
+    return fast_key_press(VK_RIGHT)
 
 def swipe_up_bluestacks(distance=70):
-    pyautogui.click()
-    pyautogui.press('up')
-    print("up arrow key pressed")
-    result = True
-    return result
+    return fast_key_press(VK_UP)
 
 def swipe_down_bluestacks(distance=70):
-    pyautogui.click()
-    pyautogui.press('down')
-
-    print("Down arrow key pressed")
-    result = True
-    return result
+    return fast_key_press(VK_DOWN)
 
 def random_ac(i):
     match i:
