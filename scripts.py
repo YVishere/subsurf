@@ -222,15 +222,19 @@ def swipe_bluestacks(start_x, start_y, end_x, end_y, duration=0.08):
         return False
 
 def swipe_left_bluestacks(distance=70):
+    print("Left")
     return fast_key_press(VK_LEFT)
 
 def swipe_right_bluestacks(distance=70):
+    print("Right")
     return fast_key_press(VK_RIGHT)
 
 def swipe_up_bluestacks(distance=70):
+    print("Up")
     return fast_key_press(VK_UP)
 
 def swipe_down_bluestacks(distance=70):
+    print("Down")
     return fast_key_press(VK_DOWN)
 
 def random_ac(i):

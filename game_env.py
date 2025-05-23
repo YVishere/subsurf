@@ -141,6 +141,11 @@ class SubwayEnv(gym.Env):
         self.sct = mss.mss()
         self.monitor = {"left": bs_left, "top": bs_top, "width": bs_width, "height": bs_height}
         
+        # Add score region change detection variables
+        self.prev_score_region = None
+        self.score_diff_threshold = 40  # Threshold for detecting significant changes
+        self.score_change_counter = 0
+        self.score_change_history = []
             
     def no_action(self):
         time.sleep(0.1)  # Remove delay
@@ -186,6 +191,11 @@ class SubwayEnv(gym.Env):
         self.steps += 1
         self.game_over, self.case = self._detect_game_over()
         
+        # Only update score occasionally to reduce OCR load
+        if self.steps % 10 == 0 and not self.game_over:
+            self.score = self._extract_score()
+            self.previous_score = self.score if self.score >= 0 else self.previous_score
+    
         score_toret = self.score if self.score>=0 else self.previous_score
         
         if self.game_over:
@@ -253,7 +263,57 @@ class SubwayEnv(gym.Env):
         return reward
     
     def _detect_game_over(self):
-        print(f"Score: {self.score}")  # Comment out print
+        """Detect game over by monitoring significant changes in score region"""
+        # Get current score region
+        global xST, xED, yST, yED
+        
+        # Extract score region (slightly expanded for better detection)
+        padding = 10
+        y_start = max(0, yST-padding)
+        y_end = min(self.non_resized.shape[0], yED+padding)
+        x_start = max(0, xST-padding)
+        x_end = min(self.non_resized.shape[1], xED+padding)
+        
+        current_score_region = self.non_resized[y_start:y_end, x_start:x_end]
+        
+        # Convert to grayscale
+        gray_region = cv2.cvtColor(current_score_region, cv2.COLOR_BGR2GRAY)
+        
+        # Initialize reference on first run
+        if self.prev_score_region is None:
+            self.prev_score_region = gray_region
+            return False, 2
+        
+        # Ensure regions are the same size for comparison
+        if gray_region.shape != self.prev_score_region.shape:
+            self.prev_score_region = cv2.resize(self.prev_score_region, 
+                                               (gray_region.shape[1], gray_region.shape[0]))
+        
+        # Calculate difference between current and previous frame
+        diff = cv2.absdiff(gray_region, self.prev_score_region)
+        mean_diff = np.mean(diff)
+        self.score_change_history.append(mean_diff)
+        
+        # Keep history limited to avoid memory growth
+        if len(self.score_change_history) > 20:
+            self.score_change_history.pop(0)
+        
+        # Update reference frame
+        self.prev_score_region = gray_region
+        
+        # Detect game over condition:
+        # 1. Large immediate change in score area
+        if mean_diff > self.score_diff_threshold:
+            self.score_change_counter += 1
+            # Require multiple consecutive frames with large changes to confirm
+            if self.score_change_counter >= 2:
+                self.score_change_counter = 0
+                # print(f"Game over detected: Score region change {mean_diff:.2f}")
+                return True, 0
+        else:
+            self.score_change_counter = 0
+        
+        # 2. Fall back to regular score checks for robustness
         if self.score < 0:
             return True, 0
         
