@@ -257,7 +257,7 @@ class SubwayEnv(gym.Env):
         if self.score < 0:
             return True, 0
         
-        if self.score == 7:
+        if self.score == 7 and self.previous_score == 7:
             return True, 0
         
         return False, 2
