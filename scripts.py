@@ -51,7 +51,7 @@ def to_absolute_coords(window_info: Dict, option = 0, relx = 0, rely = 0) -> Tup
     return abs_x, abs_y
 
 
-def restart_game(case):
+def restart_game(case, count = 1):
     #Press continue button first
     info = get_bluestacks_window()
 
@@ -66,15 +66,27 @@ def restart_game(case):
 
     #     time.sleep(0.1)  # Short delay to ensure the click is registered
 
+    #do it twice
     # Press play button
-    abs_x, abs_y = to_absolute_coords(info, 0)
-    pyautogui.moveTo(abs_x, abs_y, duration=0.05)
-    pyautogui.click()
 
-    time.sleep(0.1)  # Short delay to ensure the click is registered
-    center_x = info['left'] + info['width']//2
-    center_y = info['top'] + info['height']//2
-    pyautogui.moveTo(center_x, center_y, duration=0.05)
+    # time.sleep(2)
+    # pyautogui.press('space')
+    # time.sleep(3)
+
+    while count > 0:
+        abs_x, abs_y = to_absolute_coords(info, 0)
+        pyautogui.moveTo(abs_x, abs_y, duration=0.05)
+        time.sleep(0.1)  # Short delay to ensure the click is registered
+        pyautogui.click()
+
+        time.sleep(0.1)  # Short delay to ensure the click is registered
+        center_x = info['left'] + info['width']//2
+        center_y = info['top'] + info['height']//2
+        pyautogui.moveTo(center_x, center_y, duration=0.05)
+        count -= 1
+
+        if count > 0:
+            time.sleep(2)  # Wait for the game to load 
 
 def start_game():
     # Press play button

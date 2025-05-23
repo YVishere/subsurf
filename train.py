@@ -13,6 +13,7 @@ from game_env import SubwayEnv
 from scripts import start_game
 
 from enum import Enum
+import time
 
 import keyboard 
 
@@ -43,9 +44,9 @@ actions = [Action.LEFT, Action.RIGHT, Action.UP, Action.DOWN, Action.NONE]
 
 BATCH_SIZE = 128
 GAMMA = 0.99
-EPS_START = 0.9
-EPS_END = 0.05
-EPS_DECAY = 0.05
+EPS_START = 0.95  # Increase from 0.9
+EPS_END = 0.1     # Increase from 0.05
+EPS_DECAY = 0.2   # Slower decay (increase from 0.05)
 TAU = 0.005
 LR = 1e-4
 
@@ -72,7 +73,11 @@ policy_net = DQCNN(n_actions, n_obs).to(device)
 target_net = DQCNN(n_actions, n_obs).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 
-optimizer = torch.optim.Adam(policy_net.parameters(), lr=LR, amsgrad=True)
+# Add to your model definition:
+dropout_rate = 0.2  # Add dropout to FC layers
+weight_decay = 1e-5  # Add to optimizer
+optimizer = torch.optim.Adam(policy_net.parameters(), lr=LR, weight_decay=weight_decay, amsgrad=True)
+
 memory = ReplayMemory(10000)
 
 steps_done = 0
@@ -172,7 +177,6 @@ else:
     num_eps = 50
 
 print("Starting game...")
-start_game()
 print("Training...")
 print("-----------------------")
 
@@ -210,8 +214,7 @@ for episode in range(num_eps):
         if done:
             episode_durations.append(t + 1)
             # plot_durations()
+            print("============")
             print(f"Episode {episode}, Score: {info['score']}, Reward: {total_reward:.2f}")
+            print("============")
             break
-
-    if episode % 10 == 0:
-        print(f"Episode {episode}, Score: {info['score']}, Reward: {total_reward:.2f}")

@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import mss
 
 import time
+import threading
+import queue
 
 from scripts import *
 
@@ -105,7 +107,7 @@ class SubwayEnv(gym.Env):
         self.action_space = spaces.Discrete(5)
 
         self.score = 0
-        self.previous_score = 0
+        self.previous_score = -10
         self.steps = 0
         self.game_over = False
         
@@ -138,7 +140,8 @@ class SubwayEnv(gym.Env):
         # Create persistent mss instance for faster screenshots
         self.sct = mss.mss()
         self.monitor = {"left": bs_left, "top": bs_top, "width": bs_width, "height": bs_height}
-    
+        
+            
     def no_action(self):
         time.sleep(0.1)  # Remove delay
         print("---------No action performed")  # Comment out print
@@ -148,29 +151,33 @@ class SubwayEnv(gym.Env):
         self._restart_game()
 
         self.score = 0
-        self.previous_score = 0
+        self.previous_score = -10
         self.steps = 0
         self.game_over = False
 
         self.frames = np.zeros(self.obs_shape, dtype=np.uint8)
 
         for i in range(self.frame_stack):
-            self.frames[i] = self._get_observation()
+            self.frames[i], self.non_resized = self._get_observation()
             # time.sleep(0.1)  # Remove delay
         time.sleep(1.0)  # Remove delay
         self.score = self._extract_score()
-        if self.score == 0 and hasattr(self, '_prev_reset_attempts'):
+        while self.score < 0 and hasattr(self, '_prev_reset_attempts') and self._detect_game_over():
+            time.sleep(2)
+            self.score = self._extract_score()
             self._prev_reset_attempts += 1
-            if self._prev_reset_attempts < 3:
+            if self._prev_reset_attempts < 8:
                 print("Game may not have restarted properly. Trying again...")
                 start_game()
+                for i in range(self.frame_stack):
+                    self.frames[i], self.non_resized = self._get_observation()
             else: 
                 print("waiting for user to do something")
                 self._prev_reset_attempts = 0
                 time.sleep(5)  # Keep this longer timeout for user intervention
-                self.reset(**kwargs)
-        else:
-            self._prev_reset_attempts = 0
+                return self.reset(**kwargs)
+        
+        self._prev_reset_attempts = 0
             
         return self.frames, {}
     
@@ -179,29 +186,33 @@ class SubwayEnv(gym.Env):
         self.steps += 1
         self.game_over, self.case = self._detect_game_over()
         
+        score_toret = self.score if self.score>=0 else self.previous_score
+        
         if self.game_over:
             # print("Game over detected!")  # Comment out print
-            time.sleep(0.5)  # Remove delay
-            return self.frames, -10, True, False, {"score": self.score, "steps": self.steps}
+            # time.sleep(0.5)  # Remove delay
+            return self.frames, -10, True, False, {"score": score_toret, "steps": self.steps}
 
         # time.sleep(0.1)  # Remove delay
-        new_frame = self._get_observation()
+        new_frame, self.non_resized = self._get_observation()
 
         self.frames = np.roll(self.frames, -1, axis=0)
         self.frames[-1] = new_frame
 
         reward = self._calculate_reward()
 
-        return self.frames, reward, self.game_over, False, {"score": self.score, "steps": self.steps}
+        return self.frames, reward, self.game_over, False, {"score": score_toret, "steps": self.steps}
     
     def _get_observation(self):
-        screenshot = self._capture_game_screen()
+        screenshot1 = self._capture_game_screen()
 
+        # Downsample first before converting to grayscale
+        screenshot = cv2.resize(screenshot1, (160, 120), interpolation=cv2.INTER_AREA)
         gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
 
+        # Final resize to target shape
         resized = cv2.resize(gray, (self.frame_size[1], self.frame_size[0]), interpolation=cv2.INTER_AREA)
-        
-        return resized
+        return resized, screenshot1
     
     def _capture_game_screen(self):
         screenshot = np.array(self.sct.grab(self.monitor))
@@ -209,6 +220,14 @@ class SubwayEnv(gym.Env):
     
     def __del__(self):
         # Clean up resources
+        self.ocr_thread_running = False
+        try:
+            # Signal thread to exit
+            self.ocr_queue.put(None)
+            self.ocr_thread.join(timeout=1.0)
+        except:
+            pass
+            
         if hasattr(self, 'sct'):
             self.sct.close()
     
@@ -229,60 +248,39 @@ class SubwayEnv(gym.Env):
 
         # Still update score for informational purposes only
         self.score = self._extract_score()
-        self.previous_score = self.score
+        self.previous_score = self.score if self.score >= 0 else self.previous_score
         
         return reward
     
     def _detect_game_over(self):
-        # Initialize counter if not exists
-        if not hasattr(self, '_game_over_counter'):
-            self._game_over_counter = 0
+        print(f"Score: {self.score}")  # Comment out print
+        if self.score < 0:
+            return True, 0
         
-        # Use current frame
-        frame = self.frames[-1].copy()
-        
-        # Apply thresholding to improve OCR text detection
-        _, thresh = cv2.threshold(frame, 150, 255, cv2.THRESH_BINARY_INV)
-
-        # plt.imsave("./debug/thresh.png", thresh, cmap='gray')
-        time.sleep(0.01)  # buffer time for the screenshot to stabilize
-        # Perform OCR on the frame
-        text = pytesseract.image_to_string(thresh, config='--psm 11')
-        
-        # Check if "SAVE" appears in the text (case insensitive)
-        is_game_over = "SAVE" in text.upper()
-        if is_game_over:
-            self._game_over_counter += 1
-            # print(f"Game over candidate detected via OCR! Text found: {text}")
-        else:
-            self._game_over_counter = max(0, self._game_over_counter - 1)
-        
-        # Only confirm game over after seeing it multiple times to avoid false positives
-        confirmed_game_over = self._game_over_counter >= 1
-        
-        if confirmed_game_over:
-            # print("Game over confirmed via OCR!")
-            return True, 0  # Using case 0 for OCR detection
+        if self.score == 7:
+            return True, 0
         
         return False, 2
-            
+    
     def _extract_score(self):
         global xST, xED, yST, yED
 
-        np_img = self.frames[-1]
+        np_img = self.non_resized
         cropped = np_img[yST:yED, xST:xED]
         
-        # cv2.imwrite("./debug/score.png", cropped)  # Comment out image saving
+        cv2.imwrite("./debug/score.png", cropped)  # Comment out image saving
         
         score_text = pytesseract.image_to_string(cropped, config='--psm 7 digits')
         
         digits_only = ''.join(c for c in score_text if c.isdigit())
         
+        if digits_only == "":
+            return -1
+
         try:
             score = int(digits_only) if digits_only else 0
         except ValueError:
-            # print(f"Warning: Could not parse score text: '{score_text}'")  # Comment out print
-            score = self.previous_score
+            score = 0
         
         if ignore_multiplier:
             try:
@@ -294,7 +292,7 @@ class SubwayEnv(gym.Env):
     
     def _get_multiplier(self):
         global x_mult1, x_mult2, y_mult1, y_mult2
-        np_img = self.frames[-1]
+        np_img = self.non_resized
         cropped = np_img[y_mult1:y_mult2, x_mult1:x_mult2]
 
         # cv2.imwrite("./debug/multiplier.png", cropped)  # Comment out image saving
@@ -307,7 +305,6 @@ class SubwayEnv(gym.Env):
             multiplier = int(digits_only) if digits_only else 1
             return max(1, multiplier)
         except ValueError:
-            # print(f"Warning: Could not parse multiplier text: '{multiplier_text}'")  # Comment out print
             return 1
     
     def _restart_game(self):
