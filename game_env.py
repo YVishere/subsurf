@@ -132,7 +132,7 @@ class SubwayEnv(gym.Env):
         }
 
         self.rewards = {
-            'game_over': -10,
+            'game_over': -150,
             'survive': 0.1,
             'diff_multiplier': 0.5,
         }
@@ -164,59 +164,80 @@ class SubwayEnv(gym.Env):
         return True
     
     def reset(self, **kwargs):
+        # Clear game over state FIRST
+        self.game_over = False
+        self.case = -1
+    
+        # Ensure proper restart
         self._restart_game()
-        
+    
+        # Reset all state variables
         self.score = 0
         self.previous_score = -10
         self.steps = 0
-        self.game_over = False
-        self.prev_score_region = None  # Reset detection state
-        self.score_change_counter = 0  # Reset counter
-        
+        self.prev_score_region = None
+        self.score_change_counter = 0
+    
+        # Force clear frame buffer
         self.frames = np.zeros(self.obs_shape, dtype=np.uint8)
-        
-        # Get initial observation
-        for i in range(self.frame_stack):
-            self.frames[i], self.non_resized = self._get_observation()
-        
-        # Give game time to fully load - longer wait
-        time.sleep(2.0)  # Increased from 1.5
-        
-        # Try clicking play button again after initial wait
-        start_game()
-        time.sleep(0.5)
-        
-        # Get fresh frames after second click
+    
+        # Clear screenshot buffer
+        while not self.screenshot_buffer.empty():
+            try:
+                self.screenshot_buffer.get_nowait()
+            except queue.Empty:
+                break
+    
+        # Wait longer before interacting
+        time.sleep(1.0)
+    
+        # Get initial observations
         for i in range(self.frame_stack):
             self.frames[i], self.non_resized = self._get_observation()
     
-        # Verify game started properly
+        # Longer wait for game to fully load
+        time.sleep(2.5)  # Increased from 2.0
+    
+        # Start game with more reliable clicks
+        for _ in range(2):  # Try multiple clicks
+            start_game()
+            time.sleep(0.5)
+    
+        # Refresh observation after game start
+        for i in range(self.frame_stack):
+            self.frames[i], self.non_resized = self._get_observation()
+
+        # More robust restart verification
         self.score = self._extract_score()
-        is_game_over = False  # Don't check game over during reset
-    
         restart_attempts = 0
-        while self.score < 0 and restart_attempts < 5:  # Only check score, not game over
+    
+        # Add explicit validation that game is in playable state
+        while (self.score < 0 or self._check_for_game_over_screen()) and restart_attempts < 5:
             print(f"Game may not have restarted properly. Trying again... (Attempt {restart_attempts+1}/5)")
             restart_attempts += 1
-            
-            # Try clicking the restart/play button with increased delay
+        
+            # More forceful restart
+            restart_game()  # Assume you add a force parameter to restart_game
+            time.sleep(self.reset_delay * 1.5)  # Wait longer
+        
             start_game()
-            time.sleep(self.reset_delay)
-            
-            # Check again
+            time.sleep(1.0)  # Wait longer after clicking
+        
+            # Refresh observations
             for i in range(self.frame_stack):
                 self.frames[i], self.non_resized = self._get_observation()
                 
             self.score = self._extract_score()
     
-        # If still not working after attempts, continue anyway
-        if self.score < 0:
-            print("Warning: Score still negative, but continuing...")
-            self.score = 0  # Force valid score
-    
+        print(f"Game restarted with score: {self.score}")
         return self.frames, {}
     
     def step(self, action):
+        # Early return if already in game over state
+        if self.game_over:
+            print("Warning: step() called while game is already over")
+            return self.frames, self.rewards['game_over'], True, False, {"score": 0, "steps": self.steps}
+        
         reward_sum = 0
         done = False
         
@@ -337,21 +358,21 @@ class SubwayEnv(gym.Env):
     
     def _calculate_reward(self):
         # Comment out the original score-based reward system
-        # self.score = self._extract_score()
-        # reward = 0.1
-        # score_diff = self.score - self.previous_score
-        # if score_diff > 0:
-        #     reward += self.rewards['diff_multiplier'] * score_diff
+        self.score = self._extract_score()
+        reward = 0.1
+        score_diff = self.score - self.previous_score
+        if score_diff > 0:
+            reward += self.rewards['diff_multiplier'] * score_diff
 
         # New reward system based on survival duration
-        reward = 1.0  # Fixed reward per action performed
+        # reward = 1.0  # Fixed reward per action performed
 
         # Keep the game over penalty
         if self.game_over:
             reward += self.rewards['game_over']  # -10 penalty on game over
 
         # Still update score for informational purposes only
-        self.score = self._extract_score()
+        # self.score = self._extract_score()
         self.previous_score = self.score if self.score >= 0 else self.previous_score
         
         return reward
@@ -359,8 +380,6 @@ class SubwayEnv(gym.Env):
     def _detect_game_over(self):
         """Multi-method game over detection for better reliability"""
         # Try template matching first (most reliable)
-        if self.score > 0:
-            return False, 0
 
         if self._check_templates_for_game_over():
             return True, 0
@@ -507,5 +526,10 @@ class SubwayEnv(gym.Env):
             pyautogui.click(x, y)
             
         time.sleep(0.5)
+    
+    def _check_for_game_over_screen(self):
+        """Dedicated method to check if current screen shows game over"""
+        # Always use template matching for this specific purpose
+        return self._check_templates_for_game_over()
 
 

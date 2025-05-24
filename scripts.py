@@ -117,7 +117,7 @@ def to_absolute_coords(window_info: Dict, option = 0, relx = 0, rely = 0) -> Tup
     return abs_x, abs_y
 
 
-def restart_game(case, count = 1):
+def restart_game(case=0, count = 1):
     #Press continue button first
     info = get_bluestacks_window()
 
