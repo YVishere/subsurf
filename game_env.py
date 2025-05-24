@@ -220,24 +220,27 @@ class SubwayEnv(gym.Env):
         reward_sum = 0
         done = False
         
-        # Skip frames to speed up gameplay
-        for _ in range(self.frame_skip):
-            # Get fresh observation
+        # Execute action immediately based on current state
+        if not self.game_over:
+            self.actions[action]()
+        
+        # Tiny wait for action to take effect in game
+        time.sleep(0.01)
+        
+        # Main frame skip loop - now captures consequences of the action
+        for i in range(self.frame_skip):
+            # Get fresh observation to see results of action
             new_frame, self.non_resized = self._get_observation()
             
-            # Check game over with fresh frame
-            self.game_over, self.case = self._detect_game_over()
-            
-            # Only execute action on first frame of skip sequence and if game not over
-            if _ == 0 and not self.game_over:
-                self.actions[action]()
-            
-            # Update frame stack with latest frame
+            # Update frame stack with this new observation
             self.frames = np.roll(self.frames, -1, axis=0)
             self.frames[-1] = new_frame
             
-            # Calculate immediate reward
-            immediate_reward = self._calculate_reward() if not self.game_over else -10
+            # Check if game ended as a result of our action
+            self.game_over, self.case = self._detect_game_over()
+            
+            # Calculate reward based on current state
+            immediate_reward = self._calculate_reward() if not self.game_over else self.rewards['game_over']
             reward_sum += immediate_reward
             
             # Break out of frame skip if game ends
@@ -245,12 +248,13 @@ class SubwayEnv(gym.Env):
                 done = True
                 break
                 
-            # Small wait between skipped frames
-            time.sleep(0.01)
-        
+            # Only skip remaining frames if not on last iteration
+            if i < self.frame_skip - 1:
+                time.sleep(0.01)  # Small wait between skipped frames
+    
         self.steps += 1
         
-        # Score updates (less frequent)
+        # Score updates (less frequent to reduce OCR load)
         if self.steps % 10 == 0 and not done:
             self.score = self._extract_score()
             self.previous_score = self.score if self.score >= 0 else self.previous_score
