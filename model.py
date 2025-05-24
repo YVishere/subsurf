@@ -1,81 +1,43 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class DQCNN(nn.Module):
-    def __init__(self, n_actions, n_obsSize, dropout_rate=0.2):
+    def __init__(self, n_actions, n_obsSize, dropout_rate=0.1):
         super(DQCNN, self).__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.input_size = n_obsSize
-        self.dropout_rate = dropout_rate
-
-        # Calculate output dimensions after each convolutional layer
-        h_in, w_in = self.input_size[1], self.input_size[2]
         
-        # Conv1: (h-8)/4+1, (w-8)/4+1
-        h_conv1 = (h_in - 8) // 4 + 1
-        w_conv1 = (w_in - 8) // 4 + 1
+        # Conv layers remain the same
+        self.conv1 = nn.Conv2d(n_obsSize[0], 16, kernel_size=8, stride=4)
+        self.bn1 = nn.BatchNorm2d(16)
         
-        # Conv2: (h_conv1-4)/2+1, (w_conv1-4)/2+1
-        h_conv2 = (h_conv1 - 4) // 2 + 1
-        w_conv2 = (w_conv1 - 4) // 2 + 1
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2)
+        self.bn2 = nn.BatchNorm2d(32)
         
-        # Conv3: (h_conv2-3)/1+1, (w_conv2-3)/1+1
-        h_conv3 = (h_conv2 - 3) + 1
-        w_conv3 = (w_conv2 - 3) + 1
+        # Since we're using adaptive pooling to (4,4), the flattened size is fixed
+        self.fc_input_size = 32 * 4 * 4  # = 512
         
-        # Final flattened size for FC input
-        self.fc_input_size = 64 * h_conv3 * w_conv3
-
-        # Convolutional layers with dropout
-        self.conv1 = nn.Conv2d(self.input_size[0], 32, kernel_size=8, stride=4)
-        self.dropout2d_1 = nn.Dropout2d(p=dropout_rate/2)  # Lower rate for conv layers
-        
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
-        self.dropout2d_2 = nn.Dropout2d(p=dropout_rate/2)
-        
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
-        self.dropout2d_3 = nn.Dropout2d(p=dropout_rate/2)
-        
-        self.flatten = nn.Flatten()
-        
-        # Fully connected layers with dropout
-        self.fc1 = nn.Linear(self.fc_input_size, 512)
-        self.dropout1 = nn.Dropout(p=dropout_rate)
-        
-        self.fc2 = nn.Linear(512, 128)
-        self.dropout2 = nn.Dropout(p=dropout_rate)
-        
-        self.fc3 = nn.Linear(128, n_actions)
-        # No dropout before final output
+        self.fc1 = nn.Linear(self.fc_input_size, 256)
+        self.dropout = nn.Dropout(p=dropout_rate)
+        self.fc2 = nn.Linear(256, n_actions)
 
     def forward(self, x):
-        # Convolutional layers with activation and dropout
-        x = self.conv1(x)
-        x = torch.relu(x)
-        x = self.dropout2d_1(x)
+        x = F.relu(self.bn1(self.conv1(x)), inplace=True)
+        x = F.relu(self.bn2(self.conv2(x)), inplace=True)
         
-        x = self.conv2(x)
-        x = torch.relu(x)
-        x = self.dropout2d_2(x)
+        # Adaptive pooling ensures consistent size regardless of input
+        x = F.adaptive_avg_pool2d(x, (4, 4))
         
-        x = self.conv3(x)
-        x = torch.relu(x)
-        x = self.dropout2d_3(x)
+        # Flatten
+        x = x.view(x.size(0), -1)
         
-        x = self.flatten(x)
+        # Debug info - uncomment if needed
+        # print(f"Flattened shape: {x.shape}")
         
-        # Fully connected layers with activation and dropout
-        x = self.fc1(x)
-        x = torch.relu(x)
-        x = self.dropout1(x)
-        
+        x = F.relu(self.fc1(x), inplace=True)
+        x = self.dropout(x)
         x = self.fc2(x)
-        x = torch.relu(x)
-        x = self.dropout2(x)
         
-        # Final output layer (no dropout)
-        x = self.fc3(x)
-
         return x
     
 if __name__ == "__main__":
@@ -87,6 +49,6 @@ if __name__ == "__main__":
     gray_img = np.dot(np_img[..., :3], [0.2989, 0.5870, 0.1140])
     gray_img = torch.unsqueeze(torch.tensor(gray_img), axis=0)  # Add channel dimension
 
-    model = DQCNN(n_actions=4, n_obsSize=gray_img.shape, dropout_rate=0.2)
+    model = DQCNN(n_actions=4, n_obsSize=gray_img.shape, dropout_rate=0.1)
     print(model)
 

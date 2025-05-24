@@ -133,32 +133,54 @@ def optimize_model():
         return
     
     transitions = memory.sample(BATCH_SIZE)
-
     batch = Transition(*zip(*transitions))
 
-    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), device=device, dtype=torch.bool)
-    non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
-
-    state_batch = torch.cat(batch.state)
-    action_batch = torch.cat(batch.action)
-    reward_batch = torch.cat(batch.reward)
-
+    # Safety check for tensor shapes
+    sample_state = batch.state[0]
+    expected_shape_len = len(sample_state.shape)
+    
+    # Skip any non-matching tensors
+    valid_states = []
+    valid_actions = []
+    valid_next_states = []
+    valid_rewards = []
+    
+    for i in range(len(batch.state)):
+        if batch.next_state[i] is not None and len(batch.next_state[i].shape) == expected_shape_len:
+            valid_states.append(batch.state[i])
+            valid_actions.append(batch.action[i])
+            valid_next_states.append(batch.next_state[i])
+            valid_rewards.append(batch.reward[i])
+    
+    # Skip batch if not enough valid samples
+    if len(valid_states) < 10:
+        print(f"Not enough valid samples: {len(valid_states)}")
+        return
+    
+    # Continue with valid samples only
+    state_batch = torch.cat(valid_states)
+    action_batch = torch.cat(valid_actions)
+    reward_batch = torch.cat(valid_rewards)
+    
+    non_final_mask = torch.ones(len(valid_next_states), device=device, dtype=torch.bool)
+    non_final_next_states = torch.cat(valid_next_states)
+    
+    # Get predicted Q-values
     state_action_values = policy_net(state_batch).gather(1, action_batch)
 
-    next_state_values = torch.zeros(BATCH_SIZE, device=device)
+    # Create tensor with correct size - THIS IS THE KEY FIX
+    next_state_values = torch.zeros(len(valid_states), device=device)
+    
+    # Debug shape checking
+    if len(non_final_next_states.shape) < 4:  # Should be [batch, channels, height, width]
+        print(f"Problem with tensor shape: {non_final_next_states.shape}")
+        return
 
-    # Debug shape before passing to network
-    if non_final_mask.sum() > 0:  # If we have any non-final states
-        print(f"non_final_next_states shape: {non_final_next_states.shape}")
-        # Ensure proper shape for conv2d - should be [batch, channels, height, width]
-        if len(non_final_next_states.shape) < 3:
-            # Handle reshaping or skip problematic batch
-            print("Invalid shape detected, skipping batch")
-            return
-
+    # Get target Q-values
     with torch.no_grad():
-        next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
+        next_state_values = target_net(non_final_next_states).max(1).values
 
+    # Calculate expected Q-values
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
     criterion = nn.SmoothL1Loss()
@@ -170,6 +192,10 @@ def optimize_model():
 
     torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
     optimizer.step()
+
+# 1. Use torch.jit to compile your model
+policy_net_optimized = torch.jit.script(policy_net)
+target_net_optimized = torch.jit.script(target_net)
 
 if torch.cuda.is_available():
     num_eps = 600
@@ -190,13 +216,24 @@ for episode in range(num_eps):
         action = select_action(state)
         obs, reward, done, _, info = env.step(action.item())
         
+        # Reshape tensor properly based on observation shape
+        if isinstance(obs, np.ndarray):
+            if len(obs.shape) == 2:  # Single grayscale frame [H,W]
+                next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
+            elif len(obs.shape) == 3:  # Frame stack [stack,H,W]
+                next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
+            else:
+                print(f"Unexpected observation shape: {obs.shape}")
+                next_state = state  # Reuse previous state as fallback
+        else:
+            print(f"Unexpected observation type: {type(obs)}")
+            next_state = state
+
         # Check for exit key after each action
         check_for_exit_key()  # ADD THIS LINE
         
         reward = torch.tensor([reward], device=device)
         total_reward += reward.item()
-
-        next_state = torch.tensor(obs, dtype = torch.float32).unsqueeze(0).to(device)
 
         memory.push(state, action, next_state, reward, done)
 
