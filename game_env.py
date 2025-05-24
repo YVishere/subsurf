@@ -378,19 +378,24 @@ class SubwayEnv(gym.Env):
         return reward
     
     def _detect_game_over(self):
-        """Multi-method game over detection for better reliability"""
-        # Try template matching first (most reliable)
-
+        """Improved game over detection with early game protection"""
+        # # Skip detection during the first few steps of an episode
+        # if self.steps < 10:  # Don't detect game over too early
+        #     return False, 2
+        
+        # Only use template matching, which is more reliable
         if self._check_templates_for_game_over():
+            print(f"Game over detected by template at step {self.steps}, score {self.score}")
             return True, 0
-    
-        # Then check score region for changes (your current approach)
+        
+        # Score region change detection has too many false positives - disable it
+        # or make it extremely conservative
         global xST, xED, yST, yED
         
         # Extract score region with more padding
-        padding = 15  # Increased padding
+        padding = 15
         y_start = max(0, yST-padding)
-        y_end = min(self.non_resized.shape[0], yED+padding*2)  # More padding below
+        y_end = min(self.non_resized.shape[0], yED+padding*2)
         x_start = max(0, xST-padding)
         x_end = min(self.non_resized.shape[1], xED+padding)
         
@@ -405,26 +410,12 @@ class SubwayEnv(gym.Env):
             self.prev_score_region = gray_region
             return False, 2
         
-        # Ensure regions are the same size
-        if gray_region.shape != self.prev_score_region.shape:
-            self.prev_score_region = cv2.resize(self.prev_score_region, 
-                                              (gray_region.shape[1], gray_region.shape[0]))
-        
-        # Calculate difference with more robust method
-        diff = cv2.absdiff(gray_region, self.prev_score_region)
-        mean_diff = np.mean(diff)
-        
-        # Also check for big changes in specific UI areas (more reliable)
         # Update reference with blend for stability
-        self.prev_score_region = cv2.addWeighted(self.prev_score_region, 0.6, gray_region, 0.4, 0)
+        self.prev_score_region = cv2.addWeighted(self.prev_score_region, 0.7, gray_region, 0.3, 0)
         
-        # Use a more reliable threshold for game over
-        if mean_diff > self.score_diff_threshold * 1.5:  # Much higher threshold for confidence
-            print(f"Game over detected: Large UI change {mean_diff:.2f}")
-            return True, 0
-            
-        # Fall back to score checks only as last resort
-        if self.score < 0 or (self.score == 7 and self.previous_score == 7):
+        # Only use score checks as last resort, and only if score is very low after many steps
+        if self.score <= 0 and self.steps > 30:
+            print(f"Game over detected: Invalid score {self.score} after {self.steps} steps")
             return True, 0
         
         return False, 2

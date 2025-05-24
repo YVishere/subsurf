@@ -93,6 +93,8 @@ def select_action(state):
 
     if sample > eps_threshold:
         with torch.no_grad():
+            # Move state to the same device as the model
+            state = state.to(device)
             return policy_net(state).max(1).indices.view(1,1)
     else:
         return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
@@ -134,62 +136,37 @@ def optimize_model():
     
     transitions = memory.sample(BATCH_SIZE)
     batch = Transition(*zip(*transitions))
-
-    # Safety check for tensor shapes
-    sample_state = batch.state[0]
-    expected_shape_len = len(sample_state.shape)
     
-    # Skip any non-matching tensors
-    valid_states = []
-    valid_actions = []
-    valid_next_states = []
-    valid_rewards = []
+    # SIMPLIFIED APPROACH - don't try to be fancy with shapes
+    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), 
+                                 device=device, dtype=torch.bool)
     
-    for i in range(len(batch.state)):
-        if batch.next_state[i] is not None and len(batch.next_state[i].shape) == expected_shape_len:
-            valid_states.append(batch.state[i])
-            valid_actions.append(batch.action[i])
-            valid_next_states.append(batch.next_state[i])
-            valid_rewards.append(batch.reward[i])
-    
-    # Skip batch if not enough valid samples
-    if len(valid_states) < 10:
-        print(f"Not enough valid samples: {len(valid_states)}")
+    # Skip if no valid next states
+    if non_final_mask.sum() == 0:
         return
     
-    # Continue with valid samples only
-    state_batch = torch.cat(valid_states)
-    action_batch = torch.cat(valid_actions)
-    reward_batch = torch.cat(valid_rewards)
+    # Process normally
+    state_batch = torch.cat(batch.state)
+    action_batch = torch.cat(batch.action)
+    reward_batch = torch.cat(batch.reward)
     
-    non_final_mask = torch.ones(len(valid_next_states), device=device, dtype=torch.bool)
-    non_final_next_states = torch.cat(valid_next_states)
+    # Only use non-final next states
+    non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
     
-    # Get predicted Q-values
+    # Continue with regular DQN update
     state_action_values = policy_net(state_batch).gather(1, action_batch)
-
-    # Create tensor with correct size - THIS IS THE KEY FIX
-    next_state_values = torch.zeros(len(valid_states), device=device)
     
-    # Debug shape checking
-    if len(non_final_next_states.shape) < 4:  # Should be [batch, channels, height, width]
-        print(f"Problem with tensor shape: {non_final_next_states.shape}")
-        return
-
-    # Get target Q-values
+    next_state_values = torch.zeros(BATCH_SIZE, device=device)
     with torch.no_grad():
-        next_state_values = target_net(non_final_next_states).max(1).values
-
-    # Calculate expected Q-values
+        next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
+    
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
-
+    
     criterion = nn.SmoothL1Loss()
-
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
-
+    
     optimizer.zero_grad()
     loss.backward()
-
     torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
     optimizer.step()
 
@@ -208,36 +185,49 @@ print("-----------------------")
 
 for episode in range(num_eps):
     state, _ = env.reset()
-    state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+    if len(state.shape) == 2:  # Single frame [H, W]
+        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
+    elif len(state.shape) == 3:  # Frame stack [stack, H, W]
+        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+    else:
+        print(f"Warning: Unexpected state shape: {state.shape}")
+        # Try to fix it
+        state = state.reshape(state.shape[-2], state.shape[-1])  # Take last two dimensions
+        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
 
     total_reward = 0
     
     for t in count():
+        check_for_exit_key()  # Check for exit key at each step
         action = select_action(state)
         obs, reward, done, _, info = env.step(action.item())
         
-        # Reshape tensor properly based on observation shape
+        # Replace your current tensor conversion code with this:
         if isinstance(obs, np.ndarray):
-            if len(obs.shape) == 2:  # Single grayscale frame [H,W]
+            # Check the shape and properly format it for your CNN
+            if len(obs.shape) == 2:  # Single frame [H, W]
+                # Add batch and channel dimensions: [1, 1, H, W]
                 next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
-            elif len(obs.shape) == 3:  # Frame stack [stack,H,W]
+            elif len(obs.shape) == 3:  # Already stacked [stack, H, W]
+                # Just add batch dimension: [1, stack, H, W]
                 next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
             else:
-                print(f"Unexpected observation shape: {obs.shape}")
-                next_state = state  # Reuse previous state as fallback
+                print(f"Warning: Unexpected observation shape: {obs.shape}")
+                # Try to fix the shape
+                obs = obs.reshape(obs.shape[-2], obs.shape[-1])  # Take last two dimensions
+                next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
         else:
-            print(f"Unexpected observation type: {type(obs)}")
-            next_state = state
+            print(f"Warning: Unexpected observation type: {type(obs)}")
+            next_state = None
 
-        # Check for exit key after each action
-        check_for_exit_key()  # ADD THIS LINE
-        
-        reward = torch.tensor([reward], device=device)
-        total_reward += reward.item()
+        # Only store in memory if state is valid
+        if next_state is not None:
+            reward = torch.tensor([reward], device=device)
+            total_reward += reward.item()
 
-        memory.push(state, action, next_state, reward, done)
+            memory.push(state, action, next_state, reward, done)
 
-        state = next_state
+            state = next_state
 
         optimize_model()
 
