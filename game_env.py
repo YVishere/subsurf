@@ -100,7 +100,7 @@ template4 = np.array(template4)
 # template3 = template3[int(y1*template3.shape[0]/ss.shape[0]):int(y2*template3.shape[0]/ss.shape[0]), int(x1*template3.shape[1]/ss.shape[1]):int(x2*template3.shape[1]/ss.shape[1])]
 class SubwayEnv(gym.Env):
 
-    def __init__(self, frame_stack=4, frame_size=(84, 84)):
+    def __init__(self, frame_stack=4, frame_size=(84, 84), frame_skip=2):
         super(SubwayEnv, self).__init__()
         global ss
 
@@ -113,6 +113,7 @@ class SubwayEnv(gym.Env):
         
         self.frame_stack = frame_stack
         self.frame_size = frame_size
+        self.frame_skip = frame_skip
         
         self.obs_shape = (frame_stack, *frame_size)
 
@@ -146,72 +147,117 @@ class SubwayEnv(gym.Env):
         self.score_diff_threshold = 40  # Threshold for detecting significant changes
         self.score_change_counter = 0
         self.score_change_history = []
+        
+        # Setup screenshot buffer with threading
+        self.screenshot_buffer = queue.Queue(maxsize=2)
+        self.capture_thread_active = True
+        self.capture_thread = threading.Thread(target=self._screenshot_worker, daemon=True)
+        self.capture_thread.start()
             
+        # Initialize reset attempts counter
+        self._prev_reset_attempts = 0
+        self.reset_delay = 1.5  # Seconds to wait between restart attempts
+    
     def no_action(self):
-        time.sleep(0.1)  # Remove delay
-        print("---------No action performed")  # Comment out print
+        # Remove the delay and print statement
+        print("---------No action taken")  # Comment out print
         return True
     
     def reset(self, **kwargs):
         self._restart_game()
-
+        
         self.score = 0
         self.previous_score = -10
         self.steps = 0
         self.game_over = False
-
+        self.prev_score_region = None  # Reset detection state
+        self.score_change_counter = 0  # Reset counter
+        
         self.frames = np.zeros(self.obs_shape, dtype=np.uint8)
-
+        
+        # Get initial observation
         for i in range(self.frame_stack):
             self.frames[i], self.non_resized = self._get_observation()
-            # time.sleep(0.1)  # Remove delay
-        time.sleep(1.0)  # Remove delay
-        self.score = self._extract_score()
-        while self.score < 0 and hasattr(self, '_prev_reset_attempts') and self._detect_game_over():
-            time.sleep(2)
-            self.score = self._extract_score()
-            self._prev_reset_attempts += 1
-            if self._prev_reset_attempts < 8:
-                print("Game may not have restarted properly. Trying again...")
-                start_game()
-                for i in range(self.frame_stack):
-                    self.frames[i], self.non_resized = self._get_observation()
-            else: 
-                print("waiting for user to do something")
-                self._prev_reset_attempts = 0
-                time.sleep(5)  # Keep this longer timeout for user intervention
-                return self.reset(**kwargs)
         
-        self._prev_reset_attempts = 0
+        # Give game time to fully load - longer wait
+        time.sleep(2.0)  # Increased from 1.5
+        
+        # Try clicking play button again after initial wait
+        start_game()
+        time.sleep(0.5)
+        
+        # Get fresh frames after second click
+        for i in range(self.frame_stack):
+            self.frames[i], self.non_resized = self._get_observation()
+    
+        # Verify game started properly
+        self.score = self._extract_score()
+        is_game_over = False  # Don't check game over during reset
+    
+        restart_attempts = 0
+        while self.score < 0 and restart_attempts < 5:  # Only check score, not game over
+            print(f"Game may not have restarted properly. Trying again... (Attempt {restart_attempts+1}/5)")
+            restart_attempts += 1
             
+            # Try clicking the restart/play button with increased delay
+            start_game()
+            time.sleep(self.reset_delay)
+            
+            # Check again
+            for i in range(self.frame_stack):
+                self.frames[i], self.non_resized = self._get_observation()
+                
+            self.score = self._extract_score()
+    
+        # If still not working after attempts, continue anyway
+        if self.score < 0:
+            print("Warning: Score still negative, but continuing...")
+            self.score = 0  # Force valid score
+    
         return self.frames, {}
     
     def step(self, action):
-        self.actions[action]()
-        self.steps += 1
-        self.game_over, self.case = self._detect_game_over()
+        reward_sum = 0
+        done = False
         
-        # Only update score occasionally to reduce OCR load
-        if self.steps % 10 == 0 and not self.game_over:
+        # Skip frames to speed up gameplay
+        for _ in range(self.frame_skip):
+            # Get fresh observation
+            new_frame, self.non_resized = self._get_observation()
+            
+            # Check game over with fresh frame
+            self.game_over, self.case = self._detect_game_over()
+            
+            # Only execute action on first frame of skip sequence and if game not over
+            if _ == 0 and not self.game_over:
+                self.actions[action]()
+            
+            # Update frame stack with latest frame
+            self.frames = np.roll(self.frames, -1, axis=0)
+            self.frames[-1] = new_frame
+            
+            # Calculate immediate reward
+            immediate_reward = self._calculate_reward() if not self.game_over else -10
+            reward_sum += immediate_reward
+            
+            # Break out of frame skip if game ends
+            if self.game_over:
+                done = True
+                break
+                
+            # Small wait between skipped frames
+            time.sleep(0.01)
+        
+        self.steps += 1
+        
+        # Score updates (less frequent)
+        if self.steps % 10 == 0 and not done:
             self.score = self._extract_score()
             self.previous_score = self.score if self.score >= 0 else self.previous_score
     
-        score_toret = self.score if self.score>=0 else self.previous_score
-        
-        if self.game_over:
-            # print("Game over detected!")  # Comment out print
-            # time.sleep(0.5)  # Remove delay
-            return self.frames, -10, True, False, {"score": score_toret, "steps": self.steps}
-
-        # time.sleep(0.1)  # Remove delay
-        new_frame, self.non_resized = self._get_observation()
-
-        self.frames = np.roll(self.frames, -1, axis=0)
-        self.frames[-1] = new_frame
-
-        reward = self._calculate_reward()
-
-        return self.frames, reward, self.game_over, False, {"score": score_toret, "steps": self.steps}
+        score_toret = self.score if self.score >= 0 else self.previous_score
+    
+        return self.frames, reward_sum, done, False, {"score": score_toret, "steps": self.steps}
     
     def _get_observation(self):
         screenshot1 = self._capture_game_screen()
@@ -224,11 +270,55 @@ class SubwayEnv(gym.Env):
         resized = cv2.resize(gray, (self.frame_size[1], self.frame_size[0]), interpolation=cv2.INTER_AREA)
         return resized, screenshot1
     
+    def _screenshot_worker(self):
+        """Background thread that captures screenshots"""
+        # Create a separate mss instance specifically for this thread
+        with mss.mss() as thread_sct:
+            while self.capture_thread_active:
+                try:
+                    # Use the thread's own mss instance
+                    screenshot = np.array(thread_sct.grab(self.monitor))
+                    
+                    # Add timestamp to track frame freshness
+                    timestamp = time.time()
+                    
+                    # Clear queue before adding new frame to always have latest
+                    while not self.screenshot_buffer.empty():
+                        try:
+                            self.screenshot_buffer.get_nowait()
+                        except queue.Empty:
+                            break
+                    
+                    # Put new frame
+                    self.screenshot_buffer.put((screenshot, timestamp), block=False)
+                    
+                    # Minimal sleep to prevent CPU overuse
+                    time.sleep(0.001)  # Reduced from 0.005
+                except Exception as e:
+                    print(f"Screenshot worker error: {e}")
+                    time.sleep(0.01)
+
     def _capture_game_screen(self):
-        screenshot = np.array(self.sct.grab(self.monitor))
-        return screenshot
+        """Get latest screenshot from buffer with freshness check"""
+        try:
+            # Get screenshot and timestamp
+            screenshot, timestamp = self.screenshot_buffer.get(block=False)
+            
+            # Check if screenshot is too old (more than 100ms)
+            if time.time() - timestamp > 0.1:
+                print("Warning: Using outdated frame")
+                
+            return screenshot
+        except queue.Empty:
+            # Fallback to direct capture
+            return np.array(self.sct.grab(self.monitor))
     
     def __del__(self):
+        # Stop capture thread
+        self.capture_thread_active = False
+        if hasattr(self, 'capture_thread'):
+            self.capture_thread.join(timeout=1.0)
+        
         # Clean up resources
         self.ocr_thread_running = False
         try:
@@ -263,64 +353,95 @@ class SubwayEnv(gym.Env):
         return reward
     
     def _detect_game_over(self):
-        """Detect game over by monitoring significant changes in score region"""
-        # Get current score region
+        """Multi-method game over detection for better reliability"""
+        # Try template matching first (most reliable)
+        if self.score > 0:
+            return False, 0
+
+        if self._check_templates_for_game_over():
+            return True, 0
+    
+        # Then check score region for changes (your current approach)
         global xST, xED, yST, yED
         
-        # Extract score region (slightly expanded for better detection)
-        padding = 10
+        # Extract score region with more padding
+        padding = 15  # Increased padding
         y_start = max(0, yST-padding)
-        y_end = min(self.non_resized.shape[0], yED+padding)
+        y_end = min(self.non_resized.shape[0], yED+padding*2)  # More padding below
         x_start = max(0, xST-padding)
         x_end = min(self.non_resized.shape[1], xED+padding)
         
         current_score_region = self.non_resized[y_start:y_end, x_start:x_end]
         
-        # Convert to grayscale
+        # Convert to grayscale and use blur to reduce noise
         gray_region = cv2.cvtColor(current_score_region, cv2.COLOR_BGR2GRAY)
+        gray_region = cv2.GaussianBlur(gray_region, (3, 3), 0)
         
         # Initialize reference on first run
         if self.prev_score_region is None:
             self.prev_score_region = gray_region
             return False, 2
         
-        # Ensure regions are the same size for comparison
+        # Ensure regions are the same size
         if gray_region.shape != self.prev_score_region.shape:
             self.prev_score_region = cv2.resize(self.prev_score_region, 
-                                               (gray_region.shape[1], gray_region.shape[0]))
+                                              (gray_region.shape[1], gray_region.shape[0]))
         
-        # Calculate difference between current and previous frame
+        # Calculate difference with more robust method
         diff = cv2.absdiff(gray_region, self.prev_score_region)
         mean_diff = np.mean(diff)
-        self.score_change_history.append(mean_diff)
         
-        # Keep history limited to avoid memory growth
-        if len(self.score_change_history) > 20:
-            self.score_change_history.pop(0)
+        # Also check for big changes in specific UI areas (more reliable)
+        # Update reference with blend for stability
+        self.prev_score_region = cv2.addWeighted(self.prev_score_region, 0.6, gray_region, 0.4, 0)
         
-        # Update reference frame
-        self.prev_score_region = gray_region
-        
-        # Detect game over condition:
-        # 1. Large immediate change in score area
-        if mean_diff > self.score_diff_threshold:
-            self.score_change_counter += 1
-            # Require multiple consecutive frames with large changes to confirm
-            if self.score_change_counter >= 2:
-                self.score_change_counter = 0
-                # print(f"Game over detected: Score region change {mean_diff:.2f}")
-                return True, 0
-        else:
-            self.score_change_counter = 0
-        
-        # 2. Fall back to regular score checks for robustness
-        if self.score < 0:
+        # Use a more reliable threshold for game over
+        if mean_diff > self.score_diff_threshold * 1.5:  # Much higher threshold for confidence
+            print(f"Game over detected: Large UI change {mean_diff:.2f}")
             return True, 0
-        
-        if self.score == 7 and self.previous_score == 7:
+            
+        # Fall back to score checks only as last resort
+        if self.score < 0 or (self.score == 7 and self.previous_score == 7):
             return True, 0
         
         return False, 2
+    
+    def _check_templates_for_game_over(self):
+        """Check for game over screen using template matching"""
+        global template, template2, template3, template4
+        
+        # Get smaller version of screenshot for faster processing
+        screenshot = cv2.cvtColor(self.non_resized, cv2.COLOR_BGR2GRAY)
+        small_screen = cv2.resize(screenshot, (0, 0), fx=0.3, fy=0.3)
+        
+        templates = [template, template2, template3, template4]
+        for tmpl in templates:
+            if tmpl is None or tmpl.size == 0:
+                continue
+                
+            # Ensure template is smaller than screenshot
+            scale = min(0.25, 
+                      (small_screen.shape[0]-10) / max(10, tmpl.shape[0]), 
+                      (small_screen.shape[1]-10) / max(10, tmpl.shape[1]))
+            
+            try:
+                small_template = cv2.resize(tmpl, (0, 0), fx=scale, fy=scale)
+                
+                # Only match if template is smaller than screen
+                if (small_template.shape[0] < small_screen.shape[0] and 
+                    small_template.shape[1] < small_screen.shape[1]):
+                    
+                    result = cv2.matchTemplate(small_screen, small_template, cv2.TM_CCOEFF_NORMED)
+                    _, max_val, _, _ = cv2.minMaxLoc(result)
+                    
+                    # Higher threshold for more confidence
+                    if max_val > 0.7:  # Increased from 0.6
+                        print(f"Game over detected by template matching: {max_val:.2f}")
+                        return True
+            except Exception as e:
+                continue
+        
+        return False
     
     def _extract_score(self):
         global xST, xED, yST, yED
@@ -368,6 +489,19 @@ class SubwayEnv(gym.Env):
             return 1
     
     def _restart_game(self):
+        """Improved restart with better timing"""
         restart_game(self.case)
+        
+        # Wait a moment for restart animation
+        time.sleep(1.0)
+        
+        # Ensure window is active
+        window = get_bluestacks_window()
+        if window:
+            # Additional click to ensure game starts
+            x, y = to_absolute_coords(window, option=1)
+            pyautogui.click(x, y)
+            
+        time.sleep(0.5)
 
 
