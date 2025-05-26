@@ -79,22 +79,22 @@ y2 = int(0.7915567282321899 * ss.shape[0])
 print(ss.shape)
 
 # In the initialization section, load full templates without cropping
-template = cv2.imread("bluestacks_screenshot_gameover.png", cv2.IMREAD_GRAYSCALE)
+template = cv2.imread("./reference_pics/bluestacks_screenshot_gameover.png", cv2.IMREAD_GRAYSCALE)
 template = np.array(template)
 # Remove cropping
 # template = template[int(y1*template.shape[0]/ss.shape[0]):int(y2*template.shape[0]/ss.shape[0]), int(x1*template.shape[1]/ss.shape[1]):int(x2*template.shape[1]/ss.shape[1])]
 
-template2 = cv2.imread("bluestacks_screenshot_gameover2.png", cv2.IMREAD_GRAYSCALE)
+template2 = cv2.imread("./reference_pics/bluestacks_screenshot_gameover2.png", cv2.IMREAD_GRAYSCALE)
 template2 = np.array(template2)
 # Remove cropping
 # template2 = template2[int(y1*template2.shape[0]/ss.shape[0]):int(y2*template2.shape[0]/ss.shape[0]), int(x1*template2.shape[1]/ss.shape[1]):int(x2*template2.shape[1]/ss.shape[1])]
 
-template3 = cv2.imread("bluestacks_screenshot_gameover3.png", cv2.IMREAD_GRAYSCALE)
+template3 = cv2.imread("./reference_pics/bluestacks_screenshot_gameover3.png", cv2.IMREAD_GRAYSCALE)
 template3 = np.array(template3)
 # Remove cropping
 # template3 = template3[int(y1*template3.shape[0]/ss.shape[0]):int(y2*template3.shape[0]/ss.shape[0]), int(x1*template3.shape[1]/ss.shape[1]):int(x2*template3.shape[1]/ss.shape[1])]
 
-template4 = cv2.imread("bluestacks_screenshot_gameover4.png", cv2.IMREAD_GRAYSCALE)
+template4 = cv2.imread("./reference_pics/bluestacks_screenshot_gameover4.png", cv2.IMREAD_GRAYSCALE)
 template4 = np.array(template4)
 # Remove cropping
 # template3 = template3[int(y1*template3.shape[0]/ss.shape[0]):int(y2*template3.shape[0]/ss.shape[0]), int(x1*template3.shape[1]/ss.shape[1]):int(x2*template3.shape[1]/ss.shape[1])]
@@ -463,7 +463,7 @@ class SubwayEnv(gym.Env):
         np_img = self.non_resized
         cropped = np_img[yST:yED, xST:xED]
         
-        cv2.imwrite("./debug/score.png", cropped)  # Comment out image saving
+        # cv2.imwrite("./debug/score.png", cropped)  # Comment out image saving
         
         score_text = pytesseract.image_to_string(cropped, config='--psm 7 digits')
         
