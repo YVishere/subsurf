@@ -10,6 +10,11 @@ class ReplayMemory(object):
 
     def push(self, *args):
         """Saves a transition."""
+        # for i, arg in enumerate(args):
+        #     if hasattr(arg, 'shape'):
+        #         print(f"Transition element {i}: shape={arg.shape}, dtype={getattr(arg, 'dtype', type(arg))}")
+        #     else:
+        #         print(f"Transition element {i}: type={type(arg)}, value={arg}")
         self.memory.append(Transition(*args))
 
     def sample(self, batch_size):
@@ -18,4 +23,3 @@ class ReplayMemory(object):
 
     def __len__(self):
         return len(self.memory)
-    

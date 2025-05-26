@@ -43,12 +43,12 @@ class Action(Enum):
 actions = [Action.LEFT, Action.RIGHT, Action.UP, Action.DOWN, Action.NONE]
 
 BATCH_SIZE = 128
-GAMMA = 0.99
+GAMMA = 0.95
 EPS_START = 0.95  # Increase from 0.9
-EPS_END = 0.1     # Increase from 0.05
-EPS_DECAY = 0.2   # Slower decay (increase from 0.05)
+EPS_END = 0.2     # Increase from 0.05
+EPS_DECAY = 0.4   # Slower decay (increase from 0.05)
 TAU = 0.005
-LR = 1e-4
+LR = 5e-4
 
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
@@ -149,10 +149,29 @@ def optimize_model():
     state_batch = torch.cat(batch.state)
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
-    
+
     # Only use non-final next states
-    non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
-    
+    non_final_next_states_list = [s for s in batch.next_state if s is not None]
+    if len(non_final_next_states_list) == 1:
+        non_final_next_states = non_final_next_states_list[0]
+        # Ensure shape is [N, C, H, W]
+        if non_final_next_states.dim() == 4:
+            pass  # already batched
+        elif non_final_next_states.dim() == 3:
+            non_final_next_states = non_final_next_states.unsqueeze(0)
+        else:
+            # Try to reshape if possible
+            non_final_next_states = non_final_next_states.view(1, *non_final_next_states.shape)
+    elif len(non_final_next_states_list) > 1:
+        non_final_next_states = torch.cat(non_final_next_states_list)
+        # Ensure shape is [N, C, H, W]
+        if non_final_next_states.dim() == 3:
+            non_final_next_states = non_final_next_states.unsqueeze(0)
+        elif non_final_next_states.dim() == 2:
+            non_final_next_states = non_final_next_states.view(1, 1, *non_final_next_states.shape)
+    else:
+        non_final_next_states = None  # Should not happen due to earlier check
+
     # Continue with regular DQN update
     state_action_values = policy_net(state_batch).gather(1, action_batch)
     
@@ -225,7 +244,7 @@ for episode in range(num_eps):
             reward = torch.tensor([reward], device=device)
             total_reward += reward.item()
 
-            memory.push(state, action, next_state, reward, done)
+            memory.push(state, action, reward, next_state, done)
 
             state = next_state
 
