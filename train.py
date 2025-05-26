@@ -17,6 +17,7 @@ import time
 
 import keyboard 
 
+frame_stack = 4  # Number of frames to stack
 # Add this function before your training loop
 def check_for_exit_key():
     """Check if 'C' key is pressed and exit if so"""
@@ -62,10 +63,10 @@ first_img = Image.open("bluestacks_screenshot.png")
 np_img = np.array(first_img)
 gray_img = np.dot(np_img[..., :3], [0.2989, 0.5870, 0.1140])
 
-env = SubwayEnv(frame_stack=1, frame_size=gray_img.shape)
+env = SubwayEnv(frame_stack=frame_stack, frame_size=gray_img.shape)
 
 gray_img = torch.unsqueeze(torch.tensor(gray_img), axis=0)  # Add channel dimension
-n_obs = gray_img.shape
+n_obs = (frame_stack, gray_img.shape[1], gray_img.shape[2])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
 
@@ -137,7 +138,6 @@ def optimize_model():
     transitions = memory.sample(BATCH_SIZE)
     batch = Transition(*zip(*transitions))
     
-    # SIMPLIFIED APPROACH - don't try to be fancy with shapes
     non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), 
                                  device=device, dtype=torch.bool)
     
@@ -145,10 +145,10 @@ def optimize_model():
     if non_final_mask.sum() == 0:
         return
     
-    # Process normally
-    state_batch = torch.cat(batch.state)
-    action_batch = torch.cat(batch.action)
-    reward_batch = torch.cat(batch.reward)
+    # Process normally and move to correct device
+    state_batch = torch.cat(batch.state).to(device)
+    action_batch = torch.cat(batch.action).to(device)
+    reward_batch = torch.cat(batch.reward).to(device)
 
     # Only use non-final next states
     non_final_next_states_list = [s for s in batch.next_state if s is not None]
@@ -171,6 +171,10 @@ def optimize_model():
             non_final_next_states = non_final_next_states.view(1, 1, *non_final_next_states.shape)
     else:
         non_final_next_states = None  # Should not happen due to earlier check
+    
+    # Move non_final_next_states to the correct device
+    if non_final_next_states is not None:
+        non_final_next_states = non_final_next_states.to(device)
 
     # Continue with regular DQN update
     state_action_values = policy_net(state_batch).gather(1, action_batch)
@@ -244,7 +248,13 @@ for episode in range(num_eps):
             reward = torch.tensor([reward], device=device)
             total_reward += reward.item()
 
-            memory.push(state, action, reward, next_state, done)
+            # Ensure all are detached and on CPU, and log info
+            s = state.detach().cpu() if isinstance(state, torch.Tensor) else state
+            a = action.detach().cpu() if isinstance(action, torch.Tensor) else action
+            r = reward.detach().cpu() if isinstance(reward, torch.Tensor) else reward
+            ns = next_state.detach().cpu() if next_state is not None and isinstance(next_state, torch.Tensor) else next_state
+            d = done
+            memory.push(s, a, r, ns, d)
 
             state = next_state
 
