@@ -20,6 +20,13 @@ class DQCNN(nn.Module):
         self.fc1 = nn.Linear(self.fc_input_size, 256)
         self.dropout = nn.Dropout(p=dropout_rate)
         self.fc2 = nn.Linear(256, n_actions)
+        
+        # Add bias toward NONE action (index 4)
+        with torch.no_grad():
+            # Initialize all biases to slightly negative values
+            self.fc2.bias.fill_(-0.1)
+            # Make the NONE action bias positive
+            self.fc2.bias[4] = 0.5
 
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)), inplace=True)

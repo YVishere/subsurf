@@ -101,7 +101,7 @@ template4 = np.array(template4)
 # template3 = template3[int(y1*template3.shape[0]/ss.shape[0]):int(y2*template3.shape[0]/ss.shape[0]), int(x1*template3.shape[1]/ss.shape[1]):int(x2*template3.shape[1]/ss.shape[1])]
 class SubwayEnv(gym.Env):
 
-    def __init__(self, frame_stack=4, frame_size=(84, 84), frame_skip=2):
+    def __init__(self, frame_stack=4, frame_size=(84, 84), frame_skip=5):
         super(SubwayEnv, self).__init__()
         global ss
 
@@ -135,7 +135,7 @@ class SubwayEnv(gym.Env):
         }
 
         self.rewards = {
-            'game_over': -200,
+            'game_over': -5,
             'survive': 0.1,
             'diff_multiplier': 0.5,
         }
@@ -373,7 +373,7 @@ class SubwayEnv(gym.Env):
         #     reward += self.rewards['diff_multiplier'] * score_diff
 
         # New reward system based on survival duration
-        reward = 1.0  # Fixed reward per action performed
+        reward = 0.1  # Fixed reward per action performed
 
         # Keep the game over penalty
         if self.game_over:

@@ -18,7 +18,7 @@ import time
 
 import keyboard 
 
-frame_stack = 4  # Number of frames to stack
+frame_stack = 10  # Number of frames to stack
 # Add this function before your training loop
 def check_for_exit_key():
     """Check if 'C' key is pressed and exit if so"""
@@ -99,9 +99,13 @@ def select_action(state):
 
     if sample > eps_threshold:
         with torch.no_grad():
-            # Move state to the same device as the model
-            state = state.to(device)
-            return policy_net(state).max(1).indices.view(1,1)
+            q_values = policy_net(state)
+            
+            # Gradually decreasing bias for NONE action
+            none_bias = 0.5 * max(0, 1 - steps_done/50000)
+            q_values[0, 4] += none_bias  # NONE action bias
+            
+            return q_values.max(1)[1].view(1, 1)
     else:
         return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
 
