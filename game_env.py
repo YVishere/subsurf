@@ -8,6 +8,7 @@ import pygetwindow as gw
 import pytesseract
 import matplotlib.pyplot as plt
 import mss
+import gc
 
 import time
 import threading
@@ -232,6 +233,10 @@ class SubwayEnv(gym.Env):
             self.score = self._extract_score()
     
         print(f"Game restarted with score: {self.score}")
+        
+        # Force garbage collection
+        gc.collect()
+    
         return self.frames, {}
     
     def step(self, action):
@@ -414,7 +419,9 @@ class SubwayEnv(gym.Env):
             return False, 2
         
         # Update reference with blend for stability
+        old_region = self.prev_score_region
         self.prev_score_region = cv2.addWeighted(self.prev_score_region, 0.7, gray_region, 0.3, 0)
+        del old_region
         
         # Only use score checks as last resort, and only if score is very low after many steps
         if self.score <= 0 and self.steps > 30:
@@ -460,6 +467,7 @@ class SubwayEnv(gym.Env):
                         return True
             except Exception as e:
                 continue
+            del small_template
         
         return False
     

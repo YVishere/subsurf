@@ -194,8 +194,8 @@ def optimize_model():
     optimizer.step()
 
 # 1. Use torch.jit to compile your model
-policy_net_optimized = torch.jit.script(policy_net)
-target_net_optimized = torch.jit.script(target_net)
+# policy_net_optimized = torch.jit.script(policy_net)
+# target_net_optimized = torch.jit.script(target_net)
 
 if torch.cuda.is_available():
     num_eps = 600
@@ -207,16 +207,17 @@ print("Training...")
 print("-----------------------")
 
 for episode in range(num_eps):
-    state, _ = env.reset()
-    if len(state.shape) == 2:  # Single frame [H, W]
-        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
-    elif len(state.shape) == 3:  # Frame stack [stack, H, W]
-        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
-    else:
-        print(f"Warning: Unexpected state shape: {state.shape}")
-        # Try to fix it
-        state = state.reshape(state.shape[-2], state.shape[-1])  # Take last two dimensions
-        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
+    with torch.no_grad():
+        state, _ = env.reset()
+        if len(state.shape) == 2:  # Single frame [H, W]
+            state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
+        elif len(state.shape) == 3:  # Frame stack [stack, H, W]
+            state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+        else:
+            print(f"Warning: Unexpected state shape: {state.shape}")
+            # Try to fix it
+            state = state.reshape(state.shape[-2], state.shape[-1])  # Take last two dimensions
+            state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
 
     total_reward = 0
     
@@ -225,47 +226,60 @@ for episode in range(num_eps):
         action = select_action(state)
         obs, reward, done, _, info = env.step(action.item())
         
-        # Replace your current tensor conversion code with this:
-        if isinstance(obs, np.ndarray):
-            # Check the shape and properly format it for your CNN
-            if len(obs.shape) == 2:  # Single frame [H, W]
-                # Add batch and channel dimensions: [1, 1, H, W]
-                next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
-            elif len(obs.shape) == 3:  # Already stacked [stack, H, W]
-                # Just add batch dimension: [1, stack, H, W]
-                next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
+        # Process observations with no_grad
+        with torch.no_grad():
+            # Replace your current tensor conversion code with this:
+            if isinstance(obs, np.ndarray):
+                # Check the shape and properly format it for your CNN
+                if len(obs.shape) == 2:  # Single frame [H, W]
+                    # Add batch and channel dimensions: [1, 1, H, W]
+                    next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
+                elif len(obs.shape) == 3:  # Already stacked [stack, H, W]
+                    # Just add batch dimension: [1, stack, H, W]
+                    next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
+                else:
+                    print(f"Warning: Unexpected observation shape: {obs.shape}")
+                    # Try to fix the shape
+                    obs = obs.reshape(obs.shape[-2], obs.shape[-1])  # Take last two dimensions
+                    next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
             else:
-                print(f"Warning: Unexpected observation shape: {obs.shape}")
-                # Try to fix the shape
-                obs = obs.reshape(obs.shape[-2], obs.shape[-1])  # Take last two dimensions
-                next_state = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
-        else:
-            print(f"Warning: Unexpected observation type: {type(obs)}")
-            next_state = None
+                print(f"Warning: Unexpected observation type: {type(obs)}")
+                next_state = None
 
-        # Only store in memory if state is valid
-        if next_state is not None:
-            reward = torch.tensor([reward], device=device)
-            total_reward += reward.item()
+            # Only store in memory if state is valid
+            if next_state is not None:
+                reward = torch.tensor([reward], device=device)
+                total_reward += reward.item()
 
-            # Ensure all are detached and on CPU, and log info
-            s = state.detach().cpu() if isinstance(state, torch.Tensor) else state
-            a = action.detach().cpu() if isinstance(action, torch.Tensor) else action
-            r = reward.detach().cpu() if isinstance(reward, torch.Tensor) else reward
-            ns = next_state.detach().cpu() if next_state is not None and isinstance(next_state, torch.Tensor) else next_state
-            d = done
-            memory.push(s, a, r, ns, d)
+                # Ensure all are detached and on CPU, and log info
+                s = state.detach().cpu() if isinstance(state, torch.Tensor) else state
+                a = action.detach().cpu() if isinstance(action, torch.Tensor) else action
+                r = reward.detach().cpu() if isinstance(reward, torch.Tensor) else reward
+                ns = next_state.detach().cpu() if next_state is not None and isinstance(next_state, torch.Tensor) else next_state
+                d = done
+                memory.push(s, a, r, ns, d)
 
-            state = next_state
+                state = next_state
 
         optimize_model()
 
-        target_net_state_dict = target_net.state_dict()
-        policy_net_state_dict = policy_net.state_dict()
-
-        for key in policy_net_state_dict:
-            target_net_state_dict[key] = policy_net_state_dict[key]*TAU + target_net_state_dict[key]*(1-TAU)
-        target_net.load_state_dict(target_net_state_dict)
+        # Move the soft update to CPU to save GPU memory
+        with torch.no_grad():
+            # Get dictionaries
+            target_net.cpu()
+            policy_net_state_dict = {k: v.cpu() for k, v in policy_net.state_dict().items()}
+            target_net_state_dict = target_net.state_dict()
+            
+            # Update on CPU
+            for key in policy_net_state_dict:
+                target_net_state_dict[key] = policy_net_state_dict[key]*TAU + target_net_state_dict[key]*(1-TAU)
+            
+            # Load updated weights
+            target_net.load_state_dict(target_net_state_dict)
+            
+            # Clean up to free memory
+            del policy_net_state_dict
+            del target_net_state_dict
 
         if done:
             episode_durations.append(t + 1)
