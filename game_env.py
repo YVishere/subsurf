@@ -104,6 +104,8 @@ class SubwayEnv(gym.Env):
         super(SubwayEnv, self).__init__()
         global ss
 
+        self.template_index = -1
+
         self.action_space = spaces.Discrete(5)
 
         self.score = 0
@@ -317,6 +319,7 @@ class SubwayEnv(gym.Env):
                     # Put new frame
                     self.screenshot_buffer.put((screenshot, timestamp), block=False)
                     
+                    # plt.imsave("./debug/screenshot.png", screenshot)  # Save for debugging
                     # Minimal sleep to prevent CPU overuse
                     time.sleep(0.001)  # Reduced from 0.005
                 except Exception as e:
@@ -429,7 +432,9 @@ class SubwayEnv(gym.Env):
         small_screen = cv2.resize(screenshot, (0, 0), fx=0.3, fy=0.3)
         
         templates = [template, template2, template3, template4]
+        self.template_index = -1
         for tmpl in templates:
+            self.template_index  += 1
             if tmpl is None or tmpl.size == 0:
                 continue
                 
@@ -449,7 +454,8 @@ class SubwayEnv(gym.Env):
                     _, max_val, _, _ = cv2.minMaxLoc(result)
                     
                     # Higher threshold for more confidence
-                    if max_val > 0.7:  # Increased from 0.6
+                    # print(max_val)
+                    if max_val > 0.45:
                         print(f"Game over detected by template matching: {max_val:.2f}")
                         return True
             except Exception as e:
@@ -504,14 +510,17 @@ class SubwayEnv(gym.Env):
     
     def _restart_game(self):
         """Improved restart with better timing"""
-        restart_game(self.case)
+        if self.template_index == 1:
+            start_game()
+        else:
+            restart_game(self.case)
         
         # Wait a moment for restart animation
         time.sleep(1.0)
         
         # Ensure window is active
         window = get_bluestacks_window()
-        if window:
+        if window and not self.template_index == 1:
             # Additional click to ensure game starts
             x, y = to_absolute_coords(window, option=1)
             pyautogui.click(x, y)

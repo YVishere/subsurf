@@ -59,7 +59,7 @@ plt.ion()
 
 n_actions = len(actions)
 
-first_img = Image.open("bluestacks_screenshot.png")
+first_img = Image.open("./reference_pics/bluestacks_screenshot.png")
 np_img = np.array(first_img)
 gray_img = np.dot(np_img[..., :3], [0.2989, 0.5870, 0.1140])
 
