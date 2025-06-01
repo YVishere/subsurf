@@ -18,7 +18,7 @@ import time
 
 import keyboard 
 
-frame_stack = 10  # Number of frames to stack
+frame_stack = 5  # Number of frames to stack
 # Add this function before your training loop
 def check_for_exit_key():
     """Check if 'C' key is pressed and exit if so"""
@@ -47,8 +47,8 @@ actions = [Action.LEFT, Action.RIGHT, Action.UP, Action.DOWN, Action.NONE]
 BATCH_SIZE = 64
 GAMMA = 0.99
 EPS_START = 0.9  # Increase from 0.9
-EPS_END = 0.05     # Increase from 0.05
-EPS_DECAY = 0.1   # Slower decay (increase from 0.05)
+EPS_END = 0.1     # Increase minimum exploration
+EPS_DECAY = 0.2   # Slower decay rate
 TAU = 0.001
 LR = 1e-4
 
@@ -86,7 +86,13 @@ steps_done = 0
 
 print("Initialized")
 
+# Add to your select_action function
 def select_action(state):
+    global steps_done, episode
+    # Force exploration every 10 episodes
+    if episode % 10 == 0:
+        return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
+    
     # Make sure state is float32 before passing to model
     if state.dtype == torch.uint8:
         state = state.to(torch.float32) / 255.0
@@ -102,7 +108,7 @@ def select_action(state):
             q_values = policy_net(state)
             
             # Gradually decreasing bias for NONE action
-            none_bias = 0.5 * max(0, 1 - steps_done/50000)
+            none_bias = 0.3 * max(0, 1 - steps_done/30000)  # Less bias, shorter duration
             q_values[0, 4] += none_bias  # NONE action bias
             
             return q_values.max(1)[1].view(1, 1)
@@ -197,7 +203,7 @@ def optimize_model():
 # target_net_optimized = torch.jit.script(target_net)
 
 if torch.cuda.is_available():
-    num_eps = 600
+    num_eps = 1200
 else:
     num_eps = 50
 

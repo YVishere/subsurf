@@ -135,9 +135,10 @@ class SubwayEnv(gym.Env):
         }
 
         self.rewards = {
-            'game_over': -5,
+            'game_over': -100,
             'survive': 0.1,
             'diff_multiplier': 0.5,
+            'milestone': 5,
         }
         self.case = -1
 
@@ -379,6 +380,10 @@ class SubwayEnv(gym.Env):
         if self.game_over:
             reward += self.rewards['game_over']  # -10 penalty on game over
 
+        if self.steps % 100 == 0 and self.steps > 0:
+            reward += self.rewards['milestone']
+            print(f"Milestone reached at step {self.steps}, score {self.score}")
+            
         # Still update score for informational purposes only
         # self.score = self._extract_score()
         self.previous_score = self.score if self.score >= 0 else self.previous_score
@@ -477,6 +482,8 @@ class SubwayEnv(gym.Env):
         np_img = self.non_resized
         cropped = np_img[yST:yED, xST:xED]
         
+        if (self.steps <= 1):
+            self.muliplier = self._get_multiplier()
         # cv2.imwrite("./debug/score.png", cropped)  # Comment out image saving
         
         score_text = pytesseract.image_to_string(cropped, config='--psm 7 digits')
@@ -493,7 +500,7 @@ class SubwayEnv(gym.Env):
         
         if ignore_multiplier:
             try:
-                return score / self._get_multiplier()
+                return score / self.muliplier
             except:
                 return score
         
