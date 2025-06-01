@@ -44,13 +44,13 @@ class Action(Enum):
     
 actions = [Action.LEFT, Action.RIGHT, Action.UP, Action.DOWN, Action.NONE]
 
-BATCH_SIZE = 32
-GAMMA = 0.95
-EPS_START = 0.7  # Increase from 0.9
+BATCH_SIZE = 64
+GAMMA = 0.99
+EPS_START = 0.9  # Increase from 0.9
 EPS_END = 0.05     # Increase from 0.05
-EPS_DECAY = 0.2   # Slower decay (increase from 0.05)
-TAU = 0.005
-LR = 5e-4
+EPS_DECAY = 0.1   # Slower decay (increase from 0.05)
+TAU = 0.001
+LR = 1e-4
 
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
@@ -80,7 +80,7 @@ dropout_rate = 0.2  # Add dropout to FC layers
 weight_decay = 1e-5  # Add to optimizer
 optimizer = torch.optim.Adam(policy_net.parameters(), lr=LR, weight_decay=weight_decay, amsgrad=True)
 
-memory = ReplayMemory(2000)
+memory = ReplayMemory(20000)
 
 steps_done = 0
 

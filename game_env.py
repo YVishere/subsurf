@@ -135,7 +135,7 @@ class SubwayEnv(gym.Env):
         }
 
         self.rewards = {
-            'game_over': -20,
+            'game_over': -200,
             'survive': 0.1,
             'diff_multiplier': 0.5,
         }
