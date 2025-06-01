@@ -135,7 +135,7 @@ class SubwayEnv(gym.Env):
         }
 
         self.rewards = {
-            'game_over': -150,
+            'game_over': -20,
             'survive': 0.1,
             'diff_multiplier': 0.5,
         }
@@ -159,7 +159,7 @@ class SubwayEnv(gym.Env):
             
         # Initialize reset attempts counter
         self._prev_reset_attempts = 0
-        self.reset_delay = 1.5  # Seconds to wait between restart attempts
+        self.reset_delay = 0.5  # Seconds to wait between restart attempts
     
     def no_action(self):
         # Remove the delay and print statement
@@ -366,14 +366,14 @@ class SubwayEnv(gym.Env):
     
     def _calculate_reward(self):
         # Comment out the original score-based reward system
-        self.score = self._extract_score()
-        reward = 0.1
-        score_diff = self.score - self.previous_score
-        if score_diff > 0:
-            reward += self.rewards['diff_multiplier'] * score_diff
+        # self.score = self._extract_score()
+        # reward = 0.1
+        # score_diff = self.score - self.previous_score
+        # if score_diff > 0:
+        #     reward += self.rewards['diff_multiplier'] * score_diff
 
         # New reward system based on survival duration
-        # reward = 1.0  # Fixed reward per action performed
+        reward = 1.0  # Fixed reward per action performed
 
         # Keep the game over penalty
         if self.game_over:

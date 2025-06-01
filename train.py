@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import torch.nn as nn
 from itertools import count
+import gc
 
 from agent import ReplayMemory, Transition
 from model import DQCNN
@@ -43,11 +44,11 @@ class Action(Enum):
     
 actions = [Action.LEFT, Action.RIGHT, Action.UP, Action.DOWN, Action.NONE]
 
-BATCH_SIZE = 128
+BATCH_SIZE = 32
 GAMMA = 0.95
-EPS_START = 0.95  # Increase from 0.9
-EPS_END = 0.2     # Increase from 0.05
-EPS_DECAY = 0.4   # Slower decay (increase from 0.05)
+EPS_START = 0.7  # Increase from 0.9
+EPS_END = 0.05     # Increase from 0.05
+EPS_DECAY = 0.2   # Slower decay (increase from 0.05)
 TAU = 0.005
 LR = 5e-4
 
@@ -63,7 +64,7 @@ first_img = Image.open("./reference_pics/bluestacks_screenshot.png")
 np_img = np.array(first_img)
 gray_img = np.dot(np_img[..., :3], [0.2989, 0.5870, 0.1140])
 
-env = SubwayEnv(frame_stack=frame_stack, frame_size=gray_img.shape)
+env = SubwayEnv(frame_stack=frame_stack, frame_size=(84, 84))  # Standard RL size
 
 gray_img = torch.unsqueeze(torch.tensor(gray_img), axis=0)  # Add channel dimension
 n_obs = (frame_stack, gray_img.shape[1], gray_img.shape[2])
@@ -79,13 +80,17 @@ dropout_rate = 0.2  # Add dropout to FC layers
 weight_decay = 1e-5  # Add to optimizer
 optimizer = torch.optim.Adam(policy_net.parameters(), lr=LR, weight_decay=weight_decay, amsgrad=True)
 
-memory = ReplayMemory(10000)
+memory = ReplayMemory(2000)
 
 steps_done = 0
 
 print("Initialized")
 
 def select_action(state):
+    # Make sure state is float32 before passing to model
+    if state.dtype == torch.uint8:
+        state = state.to(torch.float32) / 255.0
+    
     global steps_done
     sample = np.random.random()
     
@@ -145,30 +150,20 @@ def optimize_model():
     if non_final_mask.sum() == 0:
         return
     
-    # Process normally and move to correct device
-    state_batch = torch.cat(batch.state).to(device)
+    # Explicitly convert state_batch to float32 BEFORE sending to GPU
+    state_batch = torch.cat(batch.state)
+    # Fix the type conversion
+    state_batch = state_batch.to(torch.float32).to(device) / 255.0
+    
     action_batch = torch.cat(batch.action).to(device)
     reward_batch = torch.cat(batch.reward).to(device)
 
-    # Only use non-final next states
+    # Only use non-final next states with correct type conversion
     non_final_next_states_list = [s for s in batch.next_state if s is not None]
-    if len(non_final_next_states_list) == 1:
-        non_final_next_states = non_final_next_states_list[0]
-        # Ensure shape is [N, C, H, W]
-        if non_final_next_states.dim() == 4:
-            pass  # already batched
-        elif non_final_next_states.dim() == 3:
-            non_final_next_states = non_final_next_states.unsqueeze(0)
-        else:
-            # Try to reshape if possible
-            non_final_next_states = non_final_next_states.view(1, *non_final_next_states.shape)
-    elif len(non_final_next_states_list) > 1:
+    if len(non_final_next_states_list) > 0:
         non_final_next_states = torch.cat(non_final_next_states_list)
-        # Ensure shape is [N, C, H, W]
-        if non_final_next_states.dim() == 3:
-            non_final_next_states = non_final_next_states.unsqueeze(0)
-        elif non_final_next_states.dim() == 2:
-            non_final_next_states = non_final_next_states.view(1, 1, *non_final_next_states.shape)
+        # Fix the type conversion here too
+        non_final_next_states = non_final_next_states.to(torch.float32).to(device) / 255.0
     else:
         non_final_next_states = None  # Should not happen due to earlier check
     
@@ -205,6 +200,13 @@ else:
 print("Starting game...")
 print("Training...")
 print("-----------------------")
+
+# Modified memory.push() preprocessing
+def process_for_memory(tensor):
+    if tensor is None:
+        return None
+    # Scale to 0-255 and convert to uint8
+    return (tensor.detach().cpu() * 255).to(torch.uint8)
 
 for episode in range(num_eps):
     with torch.no_grad():
@@ -257,6 +259,9 @@ for episode in range(num_eps):
                 r = reward.detach().cpu() if isinstance(reward, torch.Tensor) else reward
                 ns = next_state.detach().cpu() if next_state is not None and isinstance(next_state, torch.Tensor) else next_state
                 d = done
+                # During storage
+                s = process_for_memory(state)
+                ns = process_for_memory(next_state)
                 memory.push(s, a, r, ns, d)
 
                 state = next_state
@@ -280,6 +285,9 @@ for episode in range(num_eps):
             # Clean up to free memory
             del policy_net_state_dict
             del target_net_state_dict
+            
+            # Move target_net back to the appropriate device
+            target_net.to(device)
 
         if done:
             episode_durations.append(t + 1)
@@ -288,3 +296,8 @@ for episode in range(num_eps):
             print(f"Episode {episode}, Score: {info['score']}, Reward: {total_reward:.2f}")
             print("============")
             break
+
+    # After optimize_model
+    if t % 10 == 0:  # More frequent cleanup
+        gc.collect()
+        torch.cuda.empty_cache()
