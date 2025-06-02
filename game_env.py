@@ -101,7 +101,7 @@ template4 = np.array(template4)
 # template3 = template3[int(y1*template3.shape[0]/ss.shape[0]):int(y2*template3.shape[0]/ss.shape[0]), int(x1*template3.shape[1]/ss.shape[1]):int(x2*template3.shape[1]/ss.shape[1])]
 class SubwayEnv(gym.Env):
 
-    def __init__(self, frame_stack=4, frame_size=(84, 84), frame_skip=5):
+    def __init__(self, frame_stack=4, frame_size=(84, 84), frame_skip=15):
         super(SubwayEnv, self).__init__()
         global ss
 
@@ -135,7 +135,7 @@ class SubwayEnv(gym.Env):
         }
 
         self.rewards = {
-            'game_over': -100,
+            'game_over': -27,
             'survive': 0.1,
             'diff_multiplier': 0.5,
             'milestone': 5,
@@ -285,7 +285,8 @@ class SubwayEnv(gym.Env):
         
         # Score updates (less frequent to reduce OCR load)
         if self.steps % 10 == 0 and not done:
-            self.score = self._extract_score()
+            # self.score = self._extract_score()
+            self.score = 1.5 # Placeholder for score extraction
             self.previous_score = self.score if self.score >= 0 else self.previous_score
     
         score_toret = self.score if self.score >= 0 else self.previous_score

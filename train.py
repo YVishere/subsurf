@@ -18,7 +18,7 @@ import time
 
 import keyboard 
 
-frame_stack = 5  # Number of frames to stack
+frame_stack = 15  # Number of frames to stack
 # Add this function before your training loop
 def check_for_exit_key():
     """Check if 'C' key is pressed and exit if so"""
