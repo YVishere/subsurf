@@ -468,7 +468,7 @@ class SubwayEnv(gym.Env):
                     
                     # Higher threshold for more confidence
                     # print(max_val)
-                    if max_val > 0.45:
+                    if max_val > 0.7:
                         print(f"Game over detected by template matching: {max_val:.2f}")
                         return True
             except Exception as e:
