@@ -24,6 +24,9 @@ def check_for_exit_key():
     """Check if 'C' key is pressed and exit if so"""
     if keyboard.is_pressed('c'):
         print("\nUser interrupted training with 'C' key. Exiting...")
+        # Save model parameters on exit
+        torch.save(policy_net.state_dict(), 'exit_policy_net.pth')
+        print("Model parameters saved to exit_policy_net.pth")
         # Clean up any resources
         plt.close('all')
         try:
@@ -32,6 +35,10 @@ def check_for_exit_key():
             pass
         import sys
         sys.exit(0)  # Exit program
+
+bool_inp = input("Do you want to load saved manager? (y/n): ").strip().lower() == 'y'
+
+
 
 print("Starting...")
 
@@ -72,6 +79,15 @@ n_obs = (frame_stack, gray_img.shape[1], gray_img.shape[2])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
 
 policy_net = DQCNN(n_actions, n_obs).to(device)
+
+if bool_inp:
+    print("Loading saved manager...")
+    try:
+        policy_net.load_state_dict(torch.load('policy_net.pth'))
+        print("Model loaded successfully.")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+
 target_net = DQCNN(n_actions, n_obs).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 
