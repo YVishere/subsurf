@@ -31,11 +31,6 @@ class DQCNN(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
-        # Optional: bias toward NONE action (index 4)
-        with torch.no_grad():
-            if self.advantage_out.bias.shape[0] > 4:
-                self.advantage_out.bias[4] = 0.5
-
     def forward(self, x):
         x = F.leaky_relu(self.bn1(self.conv1(x)), negative_slope=0.01, inplace=True)
         x = F.leaky_relu(self.bn2(self.conv2(x)), negative_slope=0.01, inplace=True)
