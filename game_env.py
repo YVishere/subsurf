@@ -101,7 +101,7 @@ template4 = np.array(template4)
 # template3 = template3[int(y1*template3.shape[0]/ss.shape[0]):int(y2*template3.shape[0]/ss.shape[0]), int(x1*template3.shape[1]/ss.shape[1]):int(x2*template3.shape[1]/ss.shape[1])]
 class SubwayEnv(gym.Env):
 
-    def __init__(self, frame_stack=4, frame_size=(84, 84), frame_skip=30):
+    def __init__(self, frame_stack=4, frame_size=(84, 84), frame_skip=5):
         super(SubwayEnv, self).__init__()
         global ss
 

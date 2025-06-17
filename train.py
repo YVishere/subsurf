@@ -235,6 +235,7 @@ def process_for_memory(tensor):
     return (tensor.detach().cpu() * 255).to(torch.uint8)
 
 for episode in range(num_eps):
+    episode_start_time = time.time()  # Start timing the episode
     with torch.no_grad():
         state, _ = env.reset()
         if len(state.shape) == 2:  # Single frame [H, W]
@@ -248,12 +249,13 @@ for episode in range(num_eps):
             state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
 
     total_reward = 0
+    steps_in_episode = 0
     
     for t in count():
         check_for_exit_key()  # Check for exit key at each step
         action = select_action(state)
         obs, reward, done, _, info = env.step(action.item())
-        
+        steps_in_episode += 1
         # Process observations with no_grad
         with torch.no_grad():
             # Replace your current tensor conversion code with this:
@@ -320,6 +322,12 @@ for episode in range(num_eps):
             # plot_durations()
             print("============")
             print(f"Episode {episode}, Score: {info['score']}, Reward: {total_reward:.2f}")
+            # Log average output rate per episode
+            episode_end_time = time.time()
+            duration = episode_end_time - episode_start_time
+            if duration > 0:
+                avg_steps_per_sec = steps_in_episode / duration
+                print(f"Average steps per second this episode: {avg_steps_per_sec:.2f}")
             print("============")
             break
 
